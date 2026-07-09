@@ -66,21 +66,31 @@ function getMessageText(el) {
   return text;
 }
 
-// The last text we typed into this page. Anything we capture that matches it
-// is our own injection echoing back — never forward it (this caused the
-// "hall of mirrors" loop where DeepSeek received its own words nested deeper
-// each round).
-let lastInjectedText = '';
+// Texts we recently typed into this page. Anything we capture that matches
+// one is our own injection echoing back — never forward it. Must be a list,
+// not just the latest: when messages arrive in quick succession (e.g. a user
+// interject makes both AIs reply at once), an older injected bubble can be
+// captured after a newer injection replaced a single-value guard, which sent
+// Claude its own words mislabeled as [DeepSeek].
+const recentInjections = [];
+
+function rememberInjection(text) {
+  recentInjections.push(normalize(text));
+  if (recentInjections.length > 10) recentInjections.shift();
+}
 
 function isEchoOfInjected(text) {
-  if (!lastInjectedText) return false;
   const t = normalize(text);
-  if (t === lastInjectedText) return true;
-  // captured bubble = injected text plus a little UI chrome ("Edit", "Copy")
-  if (t.includes(lastInjectedText) && t.length < lastInjectedText.length + 200) return true;
-  // captured bubble = partially rendered injected text
-  if (lastInjectedText.includes(t)) return true;
-  return false;
+  if (!t) return false;
+  return recentInjections.some(inj => {
+    if (!inj) return false;
+    if (t === inj) return true;
+    // captured bubble = injected text plus a little UI chrome ("Edit", "Copy")
+    if (t.includes(inj) && t.length < inj.length + 200) return true;
+    // captured bubble = partially rendered injected text
+    if (inj.includes(t)) return true;
+    return false;
+  });
 }
 
 // Claude marks assistant responses with data-is-streaming — when present,
@@ -193,7 +203,7 @@ function injectMessage(message) {
     return;
   }
 
-  lastInjectedText = normalize(message);
+  rememberInjection(message);
   setInputText(inputField, message);
 
   // Give the site's framework a beat to register the input and render the send button
