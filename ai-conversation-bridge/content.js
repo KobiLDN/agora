@@ -6,7 +6,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     injectMessage(message.message);
     sendResponse({ success: true });
   }
+
+  if (message.action === 'getLastResponse') {
+    sendResponse({ text: getLastAIResponse() });
+  }
 });
+
+// Returns the text of the most recent AI message on the page, or null
+function getLastAIResponse() {
+  const messages = document.querySelectorAll(
+    '[data-testid*="message"], [class*="message"], [class*="chat-item"]'
+  );
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const el = messages[i];
+    const isFromAI = !el.querySelector('[class*="user"]') &&
+                     !el.querySelector('[data-testid*="user"]');
+    if (isFromAI) {
+      const text = el.textContent?.trim();
+      if (text) return text;
+    }
+  }
+  return null;
+}
 
 function resolveInputField() {
   if (isDeepSeek) {

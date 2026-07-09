@@ -47,6 +47,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
   }
 
+  if (message.action === 'forwardLast') {
+    forwardLastResponse(message.from).then((result) => sendResponse(result));
+    return true;
+  }
+
   if (message.action === 'selectorError') {
     addLogEntry('System', `⚠️ Could not find ${message.what} on ${message.site} — its UI may have changed.`);
     sendResponse({ success: true });
@@ -92,6 +97,40 @@ async function forwardMessage(message) {
   } catch (e) {
     await addLogEntry('System', `⚠️ Could not deliver to ${message.sender === 'DeepSeek' ? 'Claude' : 'DeepSeek'} tab — try Sync Tabs and reload the page.`);
   }
+}
+
+// Manual forward: grab the last AI response from one site and send it to the other.
+// Works with the bridge off — used to hand over a finished plan/answer on demand.
+async function forwardLastResponse(from) {
+  const state = await getState();
+  const sourceTabId = from === 'Claude' ? state.claudeTabId : state.deepseekTabId;
+  const targetTabId = from === 'Claude' ? state.deepseekTabId : state.claudeTabId;
+  const target = from === 'Claude' ? 'DeepSeek' : 'Claude';
+
+  if (!sourceTabId || !targetTabId) {
+    return { success: false, error: 'Both tabs must be open — try Sync Tabs.' };
+  }
+
+  let text = null;
+  try {
+    const reply = await chrome.tabs.sendMessage(sourceTabId, { action: 'getLastResponse' });
+    text = reply?.text;
+  } catch (e) {
+    return { success: false, error: `Could not reach the ${from} tab — reload it and try again.` };
+  }
+
+  if (!text) {
+    return { success: false, error: `No ${from} response found to forward.` };
+  }
+
+  await addLogEntry('System', `Manually forwarded last ${from} response to ${target}.`);
+  await addLogEntry(from, text);
+  try {
+    await chrome.tabs.sendMessage(targetTabId, { action: 'sendMessage', message: text, sender: from });
+  } catch (e) {
+    return { success: false, error: `Could not deliver to the ${target} tab — reload it and try again.` };
+  }
+  return { success: true };
 }
 
 // User interjection from the popup → log once, send to both AIs

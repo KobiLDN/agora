@@ -21,6 +21,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('syncTabs').addEventListener('click', syncTabs);
   document.getElementById('clearLog').addEventListener('click', clearLog);
   document.getElementById('sendUserMessage').addEventListener('click', sendUserMessage);
+  document.getElementById('forwardClaude').addEventListener('click', () => forwardLast('Claude'));
+  document.getElementById('forwardDeepseek').addEventListener('click', () => forwardLast('DeepSeek'));
   document.getElementById('exportJson').addEventListener('click', exportJson);
   document.getElementById('exportMd').addEventListener('click', exportMarkdown);
   document.getElementById('turnDelay').addEventListener('change', saveSettings);
@@ -139,6 +141,17 @@ async function sendUserMessage() {
   input.value = '';
   // Background logs it once and delivers to both tabs
   chrome.runtime.sendMessage({ action: 'userMessage', message });
+}
+
+async function forwardLast(from) {
+  await checkTabs();
+  const result = await chrome.runtime.sendMessage({ action: 'forwardLast', from });
+  if (result && !result.success) {
+    const banner = document.getElementById('errorBanner');
+    banner.textContent = `⚠️ ${result.error}`;
+    banner.classList.add('visible');
+    setTimeout(() => banner.classList.remove('visible'), 6000);
+  }
 }
 
 function clearLog() {
