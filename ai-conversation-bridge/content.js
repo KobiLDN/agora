@@ -8,7 +8,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// #1 — richer fallback selector chains; warns visibly when nothing is found
 function resolveInputField() {
   if (isDeepSeek) {
     return document.querySelector('textarea[placeholder*="Ask DeepSeek"]')
@@ -17,7 +16,8 @@ function resolveInputField() {
         || document.querySelector('textarea');
   }
   if (isClaude) {
-    return document.querySelector('div[contenteditable="true"][data-placeholder]')
+    return document.querySelector('div[contenteditable="true"].ProseMirror')
+        || document.querySelector('div[contenteditable="true"][data-placeholder]')
         || document.querySelector('div[contenteditable="true"]')
         || document.querySelector('textarea[placeholder*="Message Claude"]')
         || document.querySelector('textarea[placeholder*="message"]');
@@ -25,6 +25,8 @@ function resolveInputField() {
   return null;
 }
 
+// NOTE: must be called AFTER text is injected — on Claude the send button
+// is only added to the DOM once the input has content.
 function resolveSendButton() {
   if (isDeepSeek) {
     return document.querySelector('button[aria-label*="Send"]')
@@ -33,9 +35,10 @@ function resolveSendButton() {
         || document.querySelector('button:has(svg[class*="send"])');
   }
   if (isClaude) {
-    return document.querySelector('button[data-testid="send-button"]')
+    return document.querySelector('button[aria-label="Send message"]')
         || document.querySelector('button[aria-label*="Send"]')
-        || document.querySelector('button[aria-label*="send"]');
+        || document.querySelector('button[data-testid="send-button"]')
+        || document.querySelector('fieldset button[type="button"]:has(svg)');
   }
   return null;
 }
@@ -52,42 +55,54 @@ function warnSelectorFailure(what) {
   }, 4000);
 }
 
-function injectMessage(message) {
-  const inputField = resolveInputField();
-  const sendButton = resolveSendButton();
-
-  if (!inputField) {
-    warnSelectorFailure('input field');
-    return;
-  }
-  if (!sendButton) {
-    warnSelectorFailure('send button');
-    return;
-  }
-
+function setInputText(inputField, message) {
   if (inputField.tagName === 'DIV' && inputField.contentEditable === 'true') {
-    inputField.textContent = message;
-    inputField.dispatchEvent(new Event('input', { bubbles: true }));
+    // ProseMirror/React editors ignore plain textContent changes;
+    // insertText goes through the browser's editing pipeline they listen to
+    inputField.focus();
+    document.getSelection().selectAllChildren(inputField);
+    const inserted = document.execCommand('insertText', false, message);
+    if (!inserted) {
+      inputField.textContent = message;
+      inputField.dispatchEvent(new InputEvent('input', { bubbles: true, data: message, inputType: 'insertText' }));
+    }
   } else {
     inputField.value = message;
     inputField.dispatchEvent(new Event('input', { bubbles: true }));
     inputField.dispatchEvent(new Event('change', { bubbles: true }));
   }
+}
 
+function pressEnter(inputField) {
+  const opts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+  inputField.dispatchEvent(new KeyboardEvent('keydown', opts));
+  inputField.dispatchEvent(new KeyboardEvent('keyup', opts));
+}
+
+function injectMessage(message) {
+  const inputField = resolveInputField();
+  if (!inputField) {
+    warnSelectorFailure('input field');
+    return;
+  }
+
+  setInputText(inputField, message);
+
+  // Give the site's framework a beat to register the input and render the send button
   setTimeout(() => {
-    sendButton.click();
-    chrome.runtime.sendMessage({
-      action: 'newMessage',
-      sender: isDeepSeek ? 'DeepSeek' : 'Claude',
-      message
-    });
-  }, 500);
+    const sendButton = resolveSendButton();
+    if (sendButton && !sendButton.disabled) {
+      sendButton.click();
+    } else {
+      // Fall back to submitting with Enter — works on both sites
+      pressEnter(inputField);
+    }
+  }, 600);
 }
 
 // #2 — wait for streaming to finish before forwarding the response
 function isGenerating() {
   if (isDeepSeek) {
-    // DeepSeek shows a stop button or a loading spinner while generating
     return !!(
       document.querySelector('button[aria-label*="Stop"]') ||
       document.querySelector('button[class*="stop"]') ||
@@ -95,7 +110,6 @@ function isGenerating() {
     );
   }
   if (isClaude) {
-    // Claude disables the send button and shows a stop button while streaming
     return !!(
       document.querySelector('button[aria-label*="Stop"]') ||
       document.querySelector('button[data-testid="stop-button"]') ||
@@ -105,13 +119,12 @@ function isGenerating() {
   return false;
 }
 
-function waitForGenerationEnd(callback, maxWaitMs = 60000) {
+function waitForGenerationEnd(callback, maxWaitMs = 120000) {
   const start = Date.now();
   const poll = setInterval(() => {
     if (!isGenerating()) {
       clearInterval(poll);
-      // Small extra delay to let the DOM settle after streaming stops
-      setTimeout(callback, 300);
+      setTimeout(callback, 500);
     } else if (Date.now() - start > maxWaitMs) {
       clearInterval(poll);
       console.warn('[AI Bridge] Timed out waiting for generation to finish.');
@@ -121,33 +134,27 @@ function waitForGenerationEnd(callback, maxWaitMs = 60000) {
 }
 
 function observeResponses() {
-  let lastSeenText = '';
+  let capturing = false;
 
   const observer = new MutationObserver(() => {
+    if (capturing) return;
+
     const messages = document.querySelectorAll(
       '[data-testid*="message"], [class*="message"], [class*="chat-item"]'
     );
     const lastMessage = messages[messages.length - 1];
-    if (!lastMessage) return;
+    if (!lastMessage || lastMessage.dataset.aiBridgeSeen) return;
 
     const isFromAI = !lastMessage.querySelector('[class*="user"]') &&
                      !lastMessage.querySelector('[data-testid*="user"]');
     if (!isFromAI) return;
 
-    // Wait until streaming is done, then capture the final text
-    if (isGenerating()) return;
-
-    const text = lastMessage.textContent?.trim();
-    if (!text || text === lastSeenText) return;
-
-    // Mark processed only after generation is confirmed done
-    if (lastMessage.dataset.processed === text) return;
-
+    capturing = true;
     waitForGenerationEnd(() => {
+      capturing = false;
       const finalText = lastMessage.textContent?.trim();
-      if (!finalText || lastMessage.dataset.processed === finalText) return;
-      lastMessage.dataset.processed = finalText;
-      lastSeenText = finalText;
+      if (!finalText || lastMessage.dataset.aiBridgeSeen) return;
+      lastMessage.dataset.aiBridgeSeen = 'true';
       chrome.runtime.sendMessage({
         action: 'newMessage',
         sender: isDeepSeek ? 'DeepSeek' : 'Claude',

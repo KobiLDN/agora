@@ -1,26 +1,21 @@
-let bridgeActive = false;
-let conversationLog = [];
-let deepseekTabId = null;
-let claudeTabId = null;
-let turnCount = 0;
+// The popup is only a viewer/controller. All bridge logic (forwarding,
+// turn limits, logging) runs in background.js so it keeps working after
+// this popup closes. State lives in chrome.storage.local; we re-render
+// whenever it changes.
+
 let settings = { turnDelay: 3, maxTurns: 0 };
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const saved = await chrome.storage.local.get([
-    'bridgeActive', 'conversationLog', 'deepseekTabId', 'claudeTabId', 'settings'
-  ]);
-  bridgeActive = saved.bridgeActive || false;
-  conversationLog = saved.conversationLog || [];
-  deepseekTabId = saved.deepseekTabId || null;
-  claudeTabId = saved.claudeTabId || null;
-  if (saved.settings) settings = saved.settings;
+  const saved = await chrome.storage.local.get({
+    settings: { turnDelay: 3, maxTurns: 0 }
+  });
+  settings = saved.settings;
 
   document.getElementById('turnDelay').value = settings.turnDelay;
   document.getElementById('maxTurns').value = settings.maxTurns;
 
-  updateUI();
+  render();
   checkTabs();
-  updateLog();
 
   document.getElementById('toggleBridge').addEventListener('click', toggleBridge);
   document.getElementById('syncTabs').addEventListener('click', syncTabs);
@@ -28,8 +23,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('sendUserMessage').addEventListener('click', sendUserMessage);
   document.getElementById('exportJson').addEventListener('click', exportJson);
   document.getElementById('exportMd').addEventListener('click', exportMarkdown);
-
-  // #3 — persist settings on change
   document.getElementById('turnDelay').addEventListener('change', saveSettings);
   document.getElementById('maxTurns').addEventListener('change', saveSettings);
 
@@ -41,6 +34,66 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 });
 
+// Re-render whenever the background worker updates state
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (changes.conversationLog || changes.bridgeActive || changes.turnCount) {
+    render();
+  }
+});
+
+async function render() {
+  const state = await chrome.storage.local.get({
+    bridgeActive: false,
+    conversationLog: [],
+    turnCount: 0,
+    settings: { turnDelay: 3, maxTurns: 0 }
+  });
+  settings = state.settings;
+
+  const btn = document.getElementById('toggleBridge');
+  const status = document.getElementById('bridgeStatus');
+  const counter = document.getElementById('turnCounter');
+
+  if (state.bridgeActive) {
+    btn.textContent = '⏹️ Stop Bridge';
+    btn.className = 'active';
+    status.textContent = 'On';
+    status.style.color = '#4caf50';
+  } else {
+    btn.textContent = '🔗 Start Bridge';
+    btn.className = '';
+    status.textContent = 'Off';
+    status.style.color = '#f44336';
+  }
+
+  if (settings.maxTurns > 0 && state.turnCount > 0) {
+    counter.textContent = `Turn ${state.turnCount} / ${settings.maxTurns}`;
+  } else if (state.bridgeActive && state.turnCount > 0) {
+    counter.textContent = `${state.turnCount} turn${state.turnCount === 1 ? '' : 's'}`;
+  } else {
+    counter.textContent = '';
+  }
+
+  renderLog(state.conversationLog);
+}
+
+function renderLog(conversationLog) {
+  const logDiv = document.getElementById('conversationLog');
+  const countSpan = document.getElementById('messageCount');
+
+  logDiv.innerHTML = conversationLog.map(entry => {
+    const senderClass = entry.sender.toLowerCase();
+    return `<div class="log-entry">
+      <span class="sender ${senderClass}">${entry.sender}:</span>
+      <span class="message">${escapeHtml(entry.message)}</span>
+    </div>`;
+  }).join('');
+
+  countSpan.textContent = `${conversationLog.length} messages`;
+  logDiv.scrollTop = logDiv.scrollHeight;
+}
+
 function saveSettings() {
   settings.turnDelay = Math.max(0, parseInt(document.getElementById('turnDelay').value) || 0);
   settings.maxTurns = Math.max(0, parseInt(document.getElementById('maxTurns').value) || 0);
@@ -51,6 +104,8 @@ async function checkTabs() {
   const tabs = await chrome.tabs.query({});
   let deepseekFound = false;
   let claudeFound = false;
+  let deepseekTabId = null;
+  let claudeTabId = null;
 
   for (const tab of tabs) {
     if (tab.url?.includes('chat.deepseek.com')) { deepseekTabId = tab.id; deepseekFound = true; }
@@ -70,12 +125,10 @@ async function syncTabs() {
   await chrome.runtime.sendMessage({ action: 'syncTabs' });
 }
 
-function toggleBridge() {
-  bridgeActive = !bridgeActive;
-  if (bridgeActive) turnCount = 0;
-  updateUI();
-  chrome.storage.local.set({ bridgeActive });
-  chrome.runtime.sendMessage({ action: 'setBridgeState', active: bridgeActive });
+async function toggleBridge() {
+  const { bridgeActive } = await chrome.storage.local.get({ bridgeActive: false });
+  await chrome.runtime.sendMessage({ action: 'setBridgeState', active: !bridgeActive });
+  render();
 }
 
 async function sendUserMessage() {
@@ -84,68 +137,12 @@ async function sendUserMessage() {
   if (!message) return;
 
   input.value = '';
-  addLogEntry('User', message);
-
-  if (deepseekTabId) chrome.tabs.sendMessage(deepseekTabId, { action: 'sendMessage', message, sender: 'user' });
-  if (claudeTabId) chrome.tabs.sendMessage(claudeTabId, { action: 'sendMessage', message, sender: 'user' });
-}
-
-function addLogEntry(sender, message) {
-  conversationLog.push({ sender, message, timestamp: Date.now() });
-  if (conversationLog.length > 100) conversationLog.shift();
-  chrome.storage.local.set({ conversationLog });
-  updateLog();
-}
-
-function updateLog() {
-  const logDiv = document.getElementById('conversationLog');
-  const countSpan = document.getElementById('messageCount');
-
-  logDiv.innerHTML = conversationLog.map(entry => {
-    const senderClass = entry.sender.toLowerCase();
-    return `<div class="log-entry">
-      <span class="sender ${senderClass}">${entry.sender}:</span>
-      <span class="message">${escapeHtml(entry.message)}</span>
-    </div>`;
-  }).join('');
-
-  countSpan.textContent = `${conversationLog.length} messages`;
-  logDiv.scrollTop = logDiv.scrollHeight;
+  // Background logs it once and delivers to both tabs
+  chrome.runtime.sendMessage({ action: 'userMessage', message });
 }
 
 function clearLog() {
-  conversationLog = [];
-  turnCount = 0;
-  chrome.storage.local.set({ conversationLog });
-  updateLog();
-  updateUI();
-}
-
-function updateUI() {
-  const btn = document.getElementById('toggleBridge');
-  const status = document.getElementById('bridgeStatus');
-  const counter = document.getElementById('turnCounter');
-
-  if (bridgeActive) {
-    btn.textContent = '⏹️ Stop Bridge';
-    btn.className = 'active';
-    status.textContent = 'On';
-    status.style.color = '#4caf50';
-  } else {
-    btn.textContent = '🔗 Start Bridge';
-    btn.className = '';
-    status.textContent = 'Off';
-    status.style.color = '#f44336';
-  }
-
-  // #3 — show turn counter when bridge is active or has run turns
-  if (settings.maxTurns > 0 && turnCount > 0) {
-    counter.textContent = `Turn ${turnCount} / ${settings.maxTurns}`;
-  } else if (bridgeActive && turnCount > 0) {
-    counter.textContent = `${turnCount} turn${turnCount === 1 ? '' : 's'}`;
-  } else {
-    counter.textContent = '';
-  }
+  chrome.storage.local.set({ conversationLog: [], turnCount: 0 });
 }
 
 function escapeHtml(text) {
@@ -154,13 +151,9 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// #1 — surface selector errors from content script
+// Selector errors also land in the log via background.js; show the banner
+// too if the popup happens to be open when one fires
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.action === 'newMessage') {
-    addLogEntry(message.sender, message.message);
-    if (bridgeActive) scheduleForward(message);
-  }
-
   if (message.action === 'selectorError') {
     const banner = document.getElementById('errorBanner');
     banner.textContent = `⚠️ Could not find ${message.what} on ${message.site}. The site's UI may have changed.`;
@@ -168,35 +161,6 @@ chrome.runtime.onMessage.addListener((message) => {
     setTimeout(() => banner.classList.remove('visible'), 6000);
   }
 });
-
-// #3 — apply turn delay and max-turn limit before forwarding
-function scheduleForward(message) {
-  const maxTurns = settings.maxTurns;
-  if (maxTurns > 0 && turnCount >= maxTurns) {
-    bridgeActive = false;
-    chrome.storage.local.set({ bridgeActive });
-    chrome.runtime.sendMessage({ action: 'setBridgeState', active: false });
-    updateUI();
-    addLogEntry('System', `Bridge paused after ${maxTurns} turn${maxTurns === 1 ? '' : 's'}.`);
-    return;
-  }
-
-  const delayMs = (settings.turnDelay || 0) * 1000;
-  setTimeout(() => {
-    if (!bridgeActive) return;
-    turnCount++;
-    updateUI();
-    forwardMessage(message);
-  }, delayMs);
-}
-
-function forwardMessage(message) {
-  if (message.sender === 'DeepSeek' && claudeTabId) {
-    chrome.tabs.sendMessage(claudeTabId, { action: 'sendMessage', message: message.message, sender: 'DeepSeek' });
-  } else if (message.sender === 'Claude' && deepseekTabId) {
-    chrome.tabs.sendMessage(deepseekTabId, { action: 'sendMessage', message: message.message, sender: 'Claude' });
-  }
-}
 
 // #4 — export helpers
 function downloadFile(filename, content, mimeType) {
@@ -209,7 +173,8 @@ function downloadFile(filename, content, mimeType) {
   URL.revokeObjectURL(url);
 }
 
-function exportJson() {
+async function exportJson() {
+  const { conversationLog } = await chrome.storage.local.get({ conversationLog: [] });
   if (!conversationLog.length) return;
   downloadFile(
     `ai-bridge-${Date.now()}.json`,
@@ -218,7 +183,8 @@ function exportJson() {
   );
 }
 
-function exportMarkdown() {
+async function exportMarkdown() {
+  const { conversationLog } = await chrome.storage.local.get({ conversationLog: [] });
   if (!conversationLog.length) return;
   const lines = conversationLog.map(entry => {
     const date = new Date(entry.timestamp).toISOString();
