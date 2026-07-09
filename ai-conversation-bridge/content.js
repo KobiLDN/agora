@@ -263,35 +263,50 @@ function waitForStableText(el, callback, maxWaitMs = 180000) {
 }
 
 function observeResponses() {
-  let capturing = false;
+  // Anything already on the page predates the bridge — never forward it
+  getMessageNodes().forEach(n => {
+    if (!n.dataset.aiBridgeSeen) n.dataset.aiBridgeSeen = 'preexisting';
+  });
 
   const observer = new MutationObserver(() => {
-    if (capturing) return;
+    // Scan backwards for the newest unseen AI message with actual text.
+    // The old "last node only" approach broke on DeepSeek: empty/junk
+    // trailing nodes (footers, spacers) either blocked capture behind a
+    // global lock or were marked seen, silently stopping all forwarding.
+    const nodes = getMessageNodes();
+    const floor = Math.max(0, nodes.length - 10);
 
-    const messages = getMessageNodes();
-    const lastMessage = messages[messages.length - 1];
-    if (!lastMessage || lastMessage.dataset.aiBridgeSeen) return;
-    if (!isAIMessage(lastMessage)) return;
+    for (let i = nodes.length - 1; i >= floor; i--) {
+      const el = nodes[i];
+      if (el.dataset.aiBridgeSeen) break;        // older nodes are all handled
+      if (el.dataset.aiBridgePending) return;    // capture already in flight
+      if (!isAIMessage(el) || !normalize(el.textContent)) continue;
 
-    capturing = true;
-    console.debug('[AI Bridge] New AI message node detected, waiting for it to stabilize…');
-    waitForStableText(lastMessage, (finalText) => {
-      capturing = false;
-      if (!finalText || lastMessage.dataset.aiBridgeSeen) return;
-      if (isEchoOfInjected(finalText)) {
-        // our own injected text rendered as a chat bubble — ignore it
-        console.debug('[AI Bridge] Skipped echo of injected text.');
-        lastMessage.dataset.aiBridgeSeen = 'echo';
-        return;
-      }
-      lastMessage.dataset.aiBridgeSeen = 'true';
-      console.debug(`[AI Bridge] Captured response (${finalText.length} chars), sending to bridge.`);
-      chrome.runtime.sendMessage({
-        action: 'newMessage',
-        sender: isDeepSeek ? 'DeepSeek' : 'Claude',
-        message: finalText
+      el.dataset.aiBridgePending = 'true';
+      console.debug('[AI Bridge] New AI message node detected, waiting for it to stabilize…');
+      waitForStableText(el, (finalText) => {
+        delete el.dataset.aiBridgePending;
+        if (el.dataset.aiBridgeSeen) return;
+        if (!finalText) {
+          el.dataset.aiBridgeSeen = 'empty';
+          return;
+        }
+        if (isEchoOfInjected(finalText)) {
+          // our own injected text rendered as a chat bubble — ignore it
+          console.debug('[AI Bridge] Skipped echo of injected text.');
+          el.dataset.aiBridgeSeen = 'echo';
+          return;
+        }
+        el.dataset.aiBridgeSeen = 'true';
+        console.debug(`[AI Bridge] Captured response (${finalText.length} chars), sending to bridge.`);
+        chrome.runtime.sendMessage({
+          action: 'newMessage',
+          sender: isDeepSeek ? 'DeepSeek' : 'Claude',
+          message: finalText
+        });
       });
-    });
+      return;
+    }
   });
 
   const targetNode = document.querySelector('#root') || document.body;
