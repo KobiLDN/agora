@@ -18,6 +18,34 @@ function normalize(t) {
   return (t || '').replace(/\s+/g, ' ').trim();
 }
 
+// Extracts just the response prose from a message node — Claude's raw
+// textContent also contains the thinking-block summary ("Deliberated
+// between…"), copy/edit button labels, and sometimes a doubled render.
+function getMessageText(el) {
+  const clone = el.cloneNode(true);
+  clone.querySelectorAll([
+    'button',
+    'svg',
+    '[aria-hidden="true"]',
+    'details',
+    'summary',
+    '[class*="thinking"]',
+    '[class*="thought"]',
+    '[data-testid*="thinking"]',
+    '[data-testid*="thought"]'
+  ].join(',')).forEach(n => n.remove());
+
+  let text = clone.textContent?.trim() || '';
+
+  // captured text sometimes arrives exactly doubled (two renders of the
+  // same message inside one node) — collapse it
+  if (text.length % 2 === 0) {
+    const half = text.slice(0, text.length / 2);
+    if (half === text.slice(text.length / 2)) text = half.trim();
+  }
+  return text;
+}
+
 // The last text we typed into this page. Anything we capture that matches it
 // is our own injection echoing back — never forward it (this caused the
 // "hall of mirrors" loop where DeepSeek received its own words nested deeper
@@ -61,7 +89,7 @@ function getLastAIResponse() {
   for (let i = messages.length - 1; i >= 0; i--) {
     const el = messages[i];
     if (!isAIMessage(el)) continue;
-    const text = el.textContent?.trim();
+    const text = getMessageText(el);
     if (text && !isEchoOfInjected(text)) return text;
   }
   return null;
@@ -163,10 +191,12 @@ function injectMessage(message) {
 // #2 — wait for streaming to finish before forwarding the response
 function isGenerating() {
   if (isDeepSeek) {
+    // NB: no generic [class*="loading"] here — DeepSeek keeps permanently
+    // "loading"-classed elements in its DOM, which made this always true and
+    // blocked forwarding entirely. Text stability is the main guard instead.
     return !!(
       document.querySelector('button[aria-label*="Stop"]') ||
-      document.querySelector('button[class*="stop"]') ||
-      document.querySelector('[class*="loading"]')
+      document.querySelector('button[class*="stop"]')
     );
   }
   if (isClaude) {
@@ -196,7 +226,7 @@ function waitForStableText(el, callback, maxWaitMs = 180000) {
       stablePolls++;
       if (stablePolls >= 2) {
         clearInterval(poll);
-        callback(el.textContent?.trim());
+        callback(getMessageText(el));
         return;
       }
     } else {
@@ -206,8 +236,8 @@ function waitForStableText(el, callback, maxWaitMs = 180000) {
 
     if (Date.now() - start > maxWaitMs) {
       clearInterval(poll);
-      console.warn('[AI Bridge] Timed out waiting for response to stabilize.');
-      callback(el.textContent?.trim());
+      console.warn(`[AI Bridge] Timed out waiting for response to stabilize (isGenerating=${isGenerating()}).`);
+      callback(getMessageText(el));
     }
   }, 750);
 }
@@ -224,15 +254,18 @@ function observeResponses() {
     if (!isAIMessage(lastMessage)) return;
 
     capturing = true;
+    console.debug('[AI Bridge] New AI message node detected, waiting for it to stabilize…');
     waitForStableText(lastMessage, (finalText) => {
       capturing = false;
       if (!finalText || lastMessage.dataset.aiBridgeSeen) return;
       if (isEchoOfInjected(finalText)) {
         // our own injected text rendered as a chat bubble — ignore it
+        console.debug('[AI Bridge] Skipped echo of injected text.');
         lastMessage.dataset.aiBridgeSeen = 'echo';
         return;
       }
       lastMessage.dataset.aiBridgeSeen = 'true';
+      console.debug(`[AI Bridge] Captured response (${finalText.length} chars), sending to bridge.`);
       chrome.runtime.sendMessage({
         action: 'newMessage',
         sender: isDeepSeek ? 'DeepSeek' : 'Claude',
