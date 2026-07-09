@@ -135,6 +135,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // AI response captured by a content script → log it, then forward to the other AI
 async function handleNewMessage(message) {
+  // Dedupe: the observer can capture the same message from two DOM nodes
+  // (wrapper + inner both match the selectors), producing identical entries
+  // ~0.5s apart that then get forwarded twice
+  const { conversationLog } = await getState();
+  const cutoff = Date.now() - 60000;
+  const isDuplicate = conversationLog.some(e =>
+    e.sender === message.sender &&
+    e.timestamp > cutoff &&
+    e.message === message.message
+  );
+  if (isDuplicate) return;
+
   await addLogEntry(message.sender, message.message);
 
   const state = await getState();
