@@ -10,8 +10,56 @@ const DEFAULTS = {
   settings: { turnDelay: 3, maxTurns: 0, labelMessages: true },
   turnCount: 0,
   // whether each site has already received the one-time bridge intro
-  introSentTo: { DeepSeek: false, Claude: false }
+  introSentTo: { DeepSeek: false, Claude: false },
+  // forwards waiting out their turn delay — persisted because a bare
+  // setTimeout dies with the service worker and the forward is lost
+  pendingForwards: []
 };
+
+// ---- Reliable delayed forwarding -------------------------------------
+// A setTimeout in an MV3 service worker is silently discarded if Chrome
+// kills the idle worker before it fires. So every scheduled forward is
+// persisted to storage, fired by a short timer while the worker lives,
+// re-armed on worker startup, and backstopped by chrome.alarms (which
+// can wake a dead worker, at ~30s minimum granularity).
+
+async function schedulePendingForward(message, delayMs) {
+  const id = crypto.randomUUID();
+  const dueAt = Date.now() + delayMs;
+  const { pendingForwards = [] } = await chrome.storage.local.get('pendingForwards');
+  pendingForwards.push({ id, message, dueAt });
+  await chrome.storage.local.set({ pendingForwards });
+
+  setTimeout(() => firePending(id), delayMs);
+  chrome.alarms.create(`forward-${id}`, { delayInMinutes: Math.max(delayMs / 60000, 0.5) });
+}
+
+// Remove-then-fire so the timeout and the backstop alarm can't both send
+async function firePending(id) {
+  const { pendingForwards = [] } = await chrome.storage.local.get('pendingForwards');
+  const idx = pendingForwards.findIndex(p => p.id === id);
+  if (idx === -1) return;
+  const [pending] = pendingForwards.splice(idx, 1);
+  await chrome.storage.local.set({ pendingForwards });
+  chrome.alarms.clear(`forward-${id}`);
+  await forwardMessage(pending.message);
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name.startsWith('forward-')) {
+    firePending(alarm.name.slice('forward-'.length));
+  }
+});
+
+// Worker (re)started: re-arm timers for anything still pending — overdue
+// entries fire immediately
+(async () => {
+  const { pendingForwards = [] } = await chrome.storage.local.get('pendingForwards');
+  for (const p of pendingForwards) {
+    setTimeout(() => firePending(p.id), Math.max(0, p.dueAt - Date.now()));
+  }
+})();
+// -----------------------------------------------------------------------
 
 // Prefix injected text so the receiving AI knows who is talking.
 // The first message to each site also carries a one-time explanation.
@@ -50,7 +98,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       bridgeActive: message.active,
       turnCount: 0,
       // fresh session → re-send the intro to each site
-      introSentTo: { DeepSeek: false, Claude: false }
+      introSentTo: { DeepSeek: false, Claude: false },
+      // drop anything still queued from the previous session
+      pendingForwards: []
     });
     sendResponse({ success: true });
   }
@@ -97,7 +147,7 @@ async function handleNewMessage(message) {
   }
 
   const delayMs = (state.settings.turnDelay || 0) * 1000;
-  setTimeout(() => forwardMessage(message), delayMs);
+  await schedulePendingForward(message, delayMs);
 }
 
 async function forwardMessage(message) {
