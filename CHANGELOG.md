@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.3 — 2026-07-09
+
+Hardening from extended live testing — a multi-hour bridged conversation where the AIs themselves helped diagnose the bugs (the service-worker issue was spotted by the bridged Claude chat reading the code).
+
+### Fixed
+- **DeepSeek responses never forwarded** (#11) — a permanent "loading"-classed element made the extension think DeepSeek was generating forever; and the observer's last-node-only targeting with a global lock jammed on DeepSeek's trailing junk nodes. Observer now scans backwards for the newest unseen non-empty AI message with per-node tracking.
+- **Scheduled forwards silently lost** (#12) — bare `setTimeout` in the MV3 service worker dies with the worker. Forwards are now persisted to storage with a `chrome.alarms` backstop that can wake a dead worker. (Adds `alarms` permission.)
+- **Echo mislabeling under bursts** (#9) — the echo guard remembered only the last injected text; rapid messages (e.g. after a user interject) let an older injected bubble through, sending Claude its own words as `[DeepSeek]`. Guard now tracks the last 10 injections.
+- **Polluted captures** (#10) — screen-reader prefixes ("Claude responded:"), thinking-block summaries, and doubled renders stripped via structural prose extraction.
+
+### Added
+- **Sender labels** — forwarded messages carry `[DeepSeek]`/`[Claude]`/`[Human]` prefixes plus a one-time bridge notice, so each AI knows it's talking to another AI with human supervision. Toggleable in Settings.
+- Console debug logging (`[AI Bridge]` lines) for diagnosing capture issues from the page console.
+
+### Known limitations
+- Chrome throttles timers in hidden tabs — keep both AI tabs visible (split view). Documented in README.
+- Claude Code sessions (`claude.ai/code`) are explicitly excluded — they're a coding agent, not the chat product.
+
 ## v1.2 — 2026-07-09
 
 Fixes from the first live end-to-end test (a real DeepSeek ⇄ Claude conversation).
