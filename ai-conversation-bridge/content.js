@@ -14,19 +14,55 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Returns the text of the most recent AI message on the page, or null
-function getLastAIResponse() {
-  const messages = document.querySelectorAll(
+function normalize(t) {
+  return (t || '').replace(/\s+/g, ' ').trim();
+}
+
+// The last text we typed into this page. Anything we capture that matches it
+// is our own injection echoing back — never forward it (this caused the
+// "hall of mirrors" loop where DeepSeek received its own words nested deeper
+// each round).
+let lastInjectedText = '';
+
+function isEchoOfInjected(text) {
+  if (!lastInjectedText) return false;
+  const t = normalize(text);
+  if (t === lastInjectedText) return true;
+  // captured bubble = injected text plus a little UI chrome ("Edit", "Copy")
+  if (t.includes(lastInjectedText) && t.length < lastInjectedText.length + 200) return true;
+  // captured bubble = partially rendered injected text
+  if (lastInjectedText.includes(t)) return true;
+  return false;
+}
+
+// Claude marks assistant responses with data-is-streaming — when present,
+// those nodes are the only reliable message list (user bubbles never carry it)
+function getMessageNodes() {
+  if (isClaude) {
+    const nodes = document.querySelectorAll('[data-is-streaming]');
+    if (nodes.length) return nodes;
+  }
+  return document.querySelectorAll(
     '[data-testid*="message"], [class*="message"], [class*="chat-item"]'
   );
+}
+
+function isAIMessage(el) {
+  if (isClaude && el.hasAttribute('data-is-streaming')) return true;
+  return !el.querySelector('[class*="user"]') &&
+         !el.querySelector('[data-testid*="user"]') &&
+         !el.closest('[data-testid*="user"]') &&
+         !el.closest('[class*="user"]');
+}
+
+// Returns the text of the most recent AI message on the page, or null
+function getLastAIResponse() {
+  const messages = getMessageNodes();
   for (let i = messages.length - 1; i >= 0; i--) {
     const el = messages[i];
-    const isFromAI = !el.querySelector('[class*="user"]') &&
-                     !el.querySelector('[data-testid*="user"]');
-    if (isFromAI) {
-      const text = el.textContent?.trim();
-      if (text) return text;
-    }
+    if (!isAIMessage(el)) continue;
+    const text = el.textContent?.trim();
+    if (text && !isEchoOfInjected(text)) return text;
   }
   return null;
 }
@@ -109,6 +145,7 @@ function injectMessage(message) {
     return;
   }
 
+  lastInjectedText = normalize(message);
   setInputText(inputField, message);
 
   // Give the site's framework a beat to register the input and render the send button
@@ -134,6 +171,7 @@ function isGenerating() {
   }
   if (isClaude) {
     return !!(
+      document.querySelector('[data-is-streaming="true"]') ||
       document.querySelector('button[aria-label*="Stop"]') ||
       document.querySelector('button[data-testid="stop-button"]') ||
       document.querySelector('button[aria-label*="stop"]')
@@ -142,18 +180,36 @@ function isGenerating() {
   return false;
 }
 
-function waitForGenerationEnd(callback, maxWaitMs = 120000) {
+// Waits until the element's text has stopped changing (two consecutive polls
+// identical, ~1.5s apart) AND the site no longer reports generation in
+// progress. Site "is generating" selectors alone proved unreliable — DeepSeek
+// responses were captured mid-stream and forwarded truncated ("So let…").
+function waitForStableText(el, callback, maxWaitMs = 180000) {
   const start = Date.now();
+  let prev = null;
+  let stablePolls = 0;
+
   const poll = setInterval(() => {
-    if (!isGenerating()) {
-      clearInterval(poll);
-      setTimeout(callback, 500);
-    } else if (Date.now() - start > maxWaitMs) {
-      clearInterval(poll);
-      console.warn('[AI Bridge] Timed out waiting for generation to finish.');
-      callback();
+    const text = normalize(el.textContent);
+
+    if (text && text === prev && !isGenerating()) {
+      stablePolls++;
+      if (stablePolls >= 2) {
+        clearInterval(poll);
+        callback(el.textContent?.trim());
+        return;
+      }
+    } else {
+      stablePolls = 0;
     }
-  }, 500);
+    prev = text;
+
+    if (Date.now() - start > maxWaitMs) {
+      clearInterval(poll);
+      console.warn('[AI Bridge] Timed out waiting for response to stabilize.');
+      callback(el.textContent?.trim());
+    }
+  }, 750);
 }
 
 function observeResponses() {
@@ -162,21 +218,20 @@ function observeResponses() {
   const observer = new MutationObserver(() => {
     if (capturing) return;
 
-    const messages = document.querySelectorAll(
-      '[data-testid*="message"], [class*="message"], [class*="chat-item"]'
-    );
+    const messages = getMessageNodes();
     const lastMessage = messages[messages.length - 1];
     if (!lastMessage || lastMessage.dataset.aiBridgeSeen) return;
-
-    const isFromAI = !lastMessage.querySelector('[class*="user"]') &&
-                     !lastMessage.querySelector('[data-testid*="user"]');
-    if (!isFromAI) return;
+    if (!isAIMessage(lastMessage)) return;
 
     capturing = true;
-    waitForGenerationEnd(() => {
+    waitForStableText(lastMessage, (finalText) => {
       capturing = false;
-      const finalText = lastMessage.textContent?.trim();
       if (!finalText || lastMessage.dataset.aiBridgeSeen) return;
+      if (isEchoOfInjected(finalText)) {
+        // our own injected text rendered as a chat bubble — ignore it
+        lastMessage.dataset.aiBridgeSeen = 'echo';
+        return;
+      }
       lastMessage.dataset.aiBridgeSeen = 'true';
       chrome.runtime.sendMessage({
         action: 'newMessage',
