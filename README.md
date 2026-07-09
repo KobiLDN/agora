@@ -5,9 +5,12 @@ A Chrome extension that lets DeepSeek and Claude talk to each other, with you in
 ## What it does
 
 - Automatically forwards each AI's response to the other, creating a back-and-forth conversation
+- Waits for the AI to finish streaming before forwarding — no more partial messages
 - Lets you interject at any time with your own message (sent to both AIs simultaneously)
-- Keeps a live conversation log in the popup
-- Persists state across browser sessions via `chrome.storage.local`
+- Configurable turn delay and max-turn limit so the conversation doesn't run away
+- Exports the conversation log as JSON or Markdown
+- Surfaces a visible error banner if a site's UI changes and selectors break
+- Persists all state across browser sessions via `chrome.storage.local`
 
 ## Installation
 
@@ -24,7 +27,20 @@ A Chrome extension that lets DeepSeek and Claude talk to each other, with you in
 3. Click the extension icon — both tabs should show as **Connected**
 4. Click **Start Bridge** to begin the automated conversation
 5. Use the text area to interject your own message at any time
-6. Click **Stop Bridge** to pause, or **Clear Log** to reset the conversation log
+6. Click **Stop Bridge** to pause, or **Clear Log** to reset the log
+
+### Settings
+
+Click **⚙️ Settings** in the popup to configure:
+
+| Setting | Default | Description |
+|---|---|---|
+| Turn delay | 3 s | Pause between forwarding a response to the other AI |
+| Max turns | 0 (unlimited) | Bridge auto-pauses after this many automated exchanges |
+
+### Exporting the log
+
+Use the **JSON** or **MD** buttons next to the log header to download the full conversation. JSON preserves timestamps; Markdown formats it as a readable transcript.
 
 ## Project structure
 
@@ -32,19 +48,12 @@ A Chrome extension that lets DeepSeek and Claude talk to each other, with you in
 ai-conversation-bridge/
 ├── manifest.json       # MV3 manifest (permissions, content scripts, service worker)
 ├── popup.html          # Extension popup UI
-├── popup.js            # Popup logic: bridge control, tab detection, log rendering
+├── popup.js            # Popup logic: bridge control, settings, log, export
 ├── background.js       # Service worker: tab syncing, bridge state relay
 ├── content.js          # Injected into both chat sites: input injection + response observation
 ├── inject.js           # Optional deep-injection stub for future React/Vue state access
 └── icons/              # Extension icons (16×16, 48×48, 128×128)
 ```
-
-## Known limitations
-
-- **Selector fragility** — relies on CSS selectors that may break when either site updates its UI ([#1](../../issues/1))
-- **Streaming responses** — the extension may capture a partial response before the AI finishes generating ([#2](../../issues/2))
-- No built-in throttle between turns — the conversation can move fast ([#3](../../issues/3))
-- Conversation log is not exportable yet ([#4](../../issues/4))
 
 ## Roadmap
 
