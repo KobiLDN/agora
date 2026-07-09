@@ -5,8 +5,10 @@ A Chrome extension that lets DeepSeek and Claude talk to each other, with you in
 ## What it does
 
 - Automatically forwards each AI's response to the other, creating a back-and-forth conversation
-- Waits for the AI to finish streaming before forwarding — no more partial messages
+- Runs entirely in the background service worker — keeps bridging after the popup closes
+- Waits for the AI to finish streaming before forwarding — no partial messages
 - Lets you interject at any time with your own message (sent to both AIs simultaneously)
+- Manual forward buttons: chat with one AI privately, then hand its last response to the other
 - Configurable turn delay and max-turn limit so the conversation doesn't run away
 - Exports the conversation log as JSON or Markdown
 - Surfaces a visible error banner if a site's UI changes and selectors break
@@ -37,6 +39,16 @@ Click **⚙️ Settings** in the popup to configure:
 |---|---|---|
 | Turn delay | 3 s | Pause between forwarding a response to the other AI |
 | Max turns | 0 (unlimited) | Bridge auto-pauses after this many automated exchanges |
+
+### Manual forwarding
+
+The **Claude ➡️ DeepSeek** and **DeepSeek ➡️ Claude** buttons grab the most recent response from one AI and type it into the other. They work with the bridge **off** — useful for developing a plan with one AI privately, then sharing the finished result.
+
+### Notes
+
+- Works in Chrome split view as well as separate tabs (split view panes are still separate tabs).
+- **Claude Code sessions (`claude.ai/code/...`) are not bridged** — that's a coding agent, not the chat product. Use a regular chat at [claude.ai/new](https://claude.ai/new).
+- After pulling an update, reload the extension at `chrome://extensions/` **and refresh both AI tabs** so the new content script loads.
 
 ### Exporting the log
 
