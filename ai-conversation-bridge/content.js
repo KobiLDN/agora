@@ -27,6 +27,8 @@ function getMessageText(el) {
     'button',
     'svg',
     '[aria-hidden="true"]',
+    '[class*="sr-only"]',          // screen-reader labels like "Claude responded:"
+    '[class*="screenreader"]',
     'details',
     'summary',
     '[class*="thinking"]',
@@ -35,10 +37,28 @@ function getMessageText(el) {
     '[data-testid*="thought"]'
   ].join(',')).forEach(n => n.remove());
 
-  let text = clone.textContent?.trim() || '';
+  // Prefer actual prose elements over the whole container — thinking-block
+  // summaries and UI labels live in divs/spans, response text in p/li/pre.
+  // Skip nested matches (e.g. p inside blockquote) to avoid double counting.
+  const proseSelector = 'p, li, pre, blockquote, h1, h2, h3, h4';
+  const prose = Array.from(clone.querySelectorAll(proseSelector))
+    .filter(n => !n.parentElement?.closest(proseSelector));
 
-  // captured text sometimes arrives exactly doubled (two renders of the
-  // same message inside one node) — collapse it
+  let blocks;
+  if (prose.length) {
+    blocks = prose.map(n => n.textContent?.trim()).filter(Boolean);
+  } else {
+    blocks = [clone.textContent?.trim() || ''];
+  }
+
+  // Collapse consecutive duplicate blocks (React double-renders produce
+  // the same paragraph twice in a row)
+  blocks = blocks.filter((b, i) => b !== blocks[i - 1]);
+
+  let text = blocks.join('\n').trim();
+
+  // Fallback textual cleanups for anything that slipped through
+  text = text.replace(/^(Claude|DeepSeek) responded:\s*/i, '');
   if (text.length % 2 === 0) {
     const half = text.slice(0, text.length / 2);
     if (half === text.slice(text.length / 2)) text = half.trim();

@@ -47,6 +47,7 @@ The **Claude ➡️ DeepSeek** and **DeepSeek ➡️ Claude** buttons grab the m
 ### Notes
 
 - Works in Chrome split view as well as separate tabs (split view panes are still separate tabs).
+- **Keep both AI tabs visible** (split view or side-by-side windows). Chrome throttles timers in hidden tabs — a backgrounded tab can delay response capture by up to a minute, which looks like the bridge stalling until you click the tab.
 - **Claude Code sessions (`claude.ai/code/...`) are not bridged** — that's a coding agent, not the chat product. Use a regular chat at [claude.ai/new](https://claude.ai/new).
 - After pulling an update, reload the extension at `chrome://extensions/` **and refresh both AI tabs** so the new content script loads.
 
