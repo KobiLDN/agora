@@ -3,16 +3,17 @@
 // this popup closes. State lives in chrome.storage.local; we re-render
 // whenever it changes.
 
-let settings = { turnDelay: 3, maxTurns: 0 };
+let settings = { turnDelay: 3, maxTurns: 0, labelMessages: true };
 
 document.addEventListener('DOMContentLoaded', async () => {
   const saved = await chrome.storage.local.get({
-    settings: { turnDelay: 3, maxTurns: 0 }
+    settings: { turnDelay: 3, maxTurns: 0, labelMessages: true }
   });
   settings = saved.settings;
 
   document.getElementById('turnDelay').value = settings.turnDelay;
   document.getElementById('maxTurns').value = settings.maxTurns;
+  document.getElementById('labelMessages').checked = settings.labelMessages !== false;
 
   render();
   checkTabs();
@@ -27,6 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('exportMd').addEventListener('click', exportMarkdown);
   document.getElementById('turnDelay').addEventListener('change', saveSettings);
   document.getElementById('maxTurns').addEventListener('change', saveSettings);
+  document.getElementById('labelMessages').addEventListener('change', saveSettings);
 
   document.getElementById('userInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -49,7 +51,7 @@ async function render() {
     bridgeActive: false,
     conversationLog: [],
     turnCount: 0,
-    settings: { turnDelay: 3, maxTurns: 0 }
+    settings: { turnDelay: 3, maxTurns: 0, labelMessages: true }
   });
   settings = state.settings;
 
@@ -99,6 +101,7 @@ function renderLog(conversationLog) {
 function saveSettings() {
   settings.turnDelay = Math.max(0, parseInt(document.getElementById('turnDelay').value) || 0);
   settings.maxTurns = Math.max(0, parseInt(document.getElementById('maxTurns').value) || 0);
+  settings.labelMessages = document.getElementById('labelMessages').checked;
   chrome.storage.local.set({ settings });
 }
 

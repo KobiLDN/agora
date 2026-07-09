@@ -7,9 +7,27 @@ const DEFAULTS = {
   conversationLog: [],
   deepseekTabId: null,
   claudeTabId: null,
-  settings: { turnDelay: 3, maxTurns: 0 },
-  turnCount: 0
+  settings: { turnDelay: 3, maxTurns: 0, labelMessages: true },
+  turnCount: 0,
+  // whether each site has already received the one-time bridge intro
+  introSentTo: { DeepSeek: false, Claude: false }
 };
+
+// Prefix injected text so the receiving AI knows who is talking.
+// The first message to each site also carries a one-time explanation.
+async function labelText(from, target, text, state) {
+  if (!state.settings.labelMessages) return text;
+
+  let intro = '';
+  if (!state.introSentTo[target]) {
+    intro = `[Bridge notice: You are in a relayed conversation with another AI, ${from}. ` +
+            `Messages prefixed [${from}] are written by that AI, not by a human. ` +
+            `A human moderator supervises and may interject; their messages are prefixed [Human].]\n\n`;
+    const introSentTo = { ...state.introSentTo, [target]: true };
+    await chrome.storage.local.set({ introSentTo });
+  }
+  return `${intro}[${from}]: ${text}`;
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.set(DEFAULTS);
@@ -28,7 +46,12 @@ async function addLogEntry(sender, message) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'setBridgeState') {
-    chrome.storage.local.set({ bridgeActive: message.active, turnCount: 0 });
+    chrome.storage.local.set({
+      bridgeActive: message.active,
+      turnCount: 0,
+      // fresh session → re-send the intro to each site
+      introSentTo: { DeepSeek: false, Claude: false }
+    });
     sendResponse({ success: true });
   }
 
@@ -81,17 +104,15 @@ async function forwardMessage(message) {
   const state = await getState();
   if (!state.bridgeActive) return;
 
-  const targetTabId =
-    message.sender === 'DeepSeek' ? state.claudeTabId :
-    message.sender === 'Claude' ? state.deepseekTabId :
-    null;
+  const target = message.sender === 'DeepSeek' ? 'Claude' : message.sender === 'Claude' ? 'DeepSeek' : null;
+  const targetTabId = target === 'Claude' ? state.claudeTabId : target === 'DeepSeek' ? state.deepseekTabId : null;
   if (!targetTabId) return;
 
   await chrome.storage.local.set({ turnCount: state.turnCount + 1 });
   try {
     await chrome.tabs.sendMessage(targetTabId, {
       action: 'sendMessage',
-      message: message.message,
+      message: await labelText(message.sender, target, message.message, state),
       sender: message.sender
     });
   } catch (e) {
@@ -126,7 +147,11 @@ async function forwardLastResponse(from) {
   await addLogEntry('System', `Manually forwarded last ${from} response to ${target}.`);
   await addLogEntry(from, text);
   try {
-    await chrome.tabs.sendMessage(targetTabId, { action: 'sendMessage', message: text, sender: from });
+    await chrome.tabs.sendMessage(targetTabId, {
+      action: 'sendMessage',
+      message: await labelText(from, target, text, state),
+      sender: from
+    });
   } catch (e) {
     return { success: false, error: `Could not deliver to the ${target} tab — reload it and try again.` };
   }
@@ -137,11 +162,12 @@ async function forwardLastResponse(from) {
 async function handleUserMessage(text) {
   await addLogEntry('User', text);
   const state = await getState();
+  const outgoing = state.settings.labelMessages ? `[Human]: ${text}` : text;
 
   for (const tabId of [state.deepseekTabId, state.claudeTabId]) {
     if (!tabId) continue;
     try {
-      await chrome.tabs.sendMessage(tabId, { action: 'sendMessage', message: text, sender: 'user' });
+      await chrome.tabs.sendMessage(tabId, { action: 'sendMessage', message: outgoing, sender: 'user' });
     } catch (e) {
       // tab gone; syncTabs will clean up
     }
