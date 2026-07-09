@@ -155,7 +155,7 @@ async function syncTabs() {
 
   for (const tab of tabs) {
     if (tab.url?.includes('chat.deepseek.com')) deepseekTabId = tab.id;
-    if (tab.url?.includes('claude.ai')) claudeTabId = tab.id;
+    if (tab.url?.includes('claude.ai') && !tab.url?.includes('claude.ai/code')) claudeTabId = tab.id;
   }
 
   await chrome.storage.local.set({ deepseekTabId, claudeTabId });

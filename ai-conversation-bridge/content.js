@@ -1,5 +1,7 @@
 const isDeepSeek = window.location.href.includes('chat.deepseek.com');
-const isClaude = window.location.href.includes('claude.ai');
+// claude.ai/code is Claude Code (a different product) — not a chat we can bridge
+const isClaude = window.location.href.includes('claude.ai') &&
+                 !window.location.href.includes('claude.ai/code');
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'sendMessage') {

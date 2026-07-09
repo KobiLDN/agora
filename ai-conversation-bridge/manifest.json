@@ -27,6 +27,7 @@
   "content_scripts": [
     {
       "matches": ["https://chat.deepseek.com/*", "https://claude.ai/*"],
+      "exclude_matches": ["https://claude.ai/code/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

@@ -111,7 +111,7 @@ async function checkTabs() {
 
   for (const tab of tabs) {
     if (tab.url?.includes('chat.deepseek.com')) { deepseekTabId = tab.id; deepseekFound = true; }
-    if (tab.url?.includes('claude.ai')) { claudeTabId = tab.id; claudeFound = true; }
+    if (tab.url?.includes('claude.ai') && !tab.url?.includes('claude.ai/code')) { claudeTabId = tab.id; claudeFound = true; }
   }
 
   document.getElementById('deepseekStatus').className = `status-dot ${deepseekFound ? 'online' : 'offline'}`;
