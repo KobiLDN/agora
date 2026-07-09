@@ -37,15 +37,9 @@
       border-radius: 50%;
       display: inline-block;
     }
-    .status-dot.online {
-      background: #4caf50;
-    }
-    .status-dot.offline {
-      background: #f44336;
-    }
-    .status-label {
-      font-size: 13px;
-    }
+    .status-dot.online { background: #4caf50; }
+    .status-dot.offline { background: #f44336; }
+    .status-label { font-size: 13px; }
     .controls {
       display: flex;
       flex-direction: column;
@@ -62,30 +56,11 @@
       cursor: pointer;
       transition: all 0.2s;
     }
-    button:hover {
-      background: #5f7ff7;
-      transform: translateY(-1px);
-    }
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none;
-    }
-    button.secondary {
-      background: #333;
-    }
-    button.secondary:hover {
-      background: #444;
-    }
-    button.danger {
-      background: #dc3545;
-    }
-    button.danger:hover {
-      background: #c82333;
-    }
-    .input-area {
-      margin: 12px 0;
-    }
+    button:hover { background: #5f7ff7; transform: translateY(-1px); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    button.secondary { background: #333; }
+    button.secondary:hover { background: #444; }
+    .input-area { margin: 12px 0; }
     textarea {
       width: 100%;
       height: 60px;
@@ -99,12 +74,46 @@
       font-size: 13px;
       box-sizing: border-box;
     }
-    textarea:focus {
-      outline: none;
-      border-color: #4a6cf7;
+    textarea:focus { outline: none; border-color: #4a6cf7; }
+
+    /* #3 — settings panel */
+    .settings-panel {
+      background: #2a2a2a;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      font-size: 13px;
     }
+    .settings-panel summary {
+      cursor: pointer;
+      font-weight: bold;
+      color: #ccc;
+      user-select: none;
+    }
+    .settings-panel summary:hover { color: #fff; }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+      gap: 8px;
+    }
+    .setting-row label { color: #bbb; flex: 1; }
+    .setting-row input[type="number"] {
+      width: 64px;
+      padding: 4px 6px;
+      background: #1a1a1a;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-size: 13px;
+      text-align: right;
+    }
+    .setting-row input[type="number"]:focus { outline: none; border-color: #4a6cf7; }
+    .setting-hint { font-size: 11px; color: #666; margin-top: 2px; }
+
     .conversation-log {
-      max-height: 300px;
+      max-height: 260px;
       overflow-y: auto;
       background: #2a2a2a;
       border-radius: 6px;
@@ -118,30 +127,13 @@
       display: flex;
       gap: 8px;
     }
-    .log-entry .sender {
-      font-weight: bold;
-      min-width: 70px;
-    }
-    .log-entry .sender.deepseek {
-      color: #4a6cf7;
-    }
-    .log-entry .sender.claude {
-      color: #d97706;
-    }
-    .log-entry .sender.user {
-      color: #10b981;
-    }
-    .log-entry .message {
-      word-break: break-word;
-      flex: 1;
-    }
-    .controls-row {
-      display: flex;
-      gap: 8px;
-    }
-    .controls-row button {
-      flex: 1;
-    }
+    .log-entry .sender { font-weight: bold; min-width: 70px; }
+    .log-entry .sender.deepseek { color: #4a6cf7; }
+    .log-entry .sender.claude { color: #d97706; }
+    .log-entry .sender.user { color: #10b981; }
+    .log-entry .message { word-break: break-word; flex: 1; }
+    .controls-row { display: flex; gap: 8px; }
+    .controls-row button { flex: 1; }
     .badge {
       font-size: 11px;
       background: #333;
@@ -149,12 +141,29 @@
       border-radius: 12px;
       color: #aaa;
     }
-    #toggleBridge {
-      background: #4a6cf7;
+    #toggleBridge { background: #4a6cf7; }
+    #toggleBridge.active { background: #dc3545; }
+
+    /* turn counter badge */
+    #turnCounter {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+      text-align: center;
     }
-    #toggleBridge.active {
-      background: #dc3545;
+
+    /* selector error banner */
+    .error-banner {
+      background: #5c1a1a;
+      border: 1px solid #dc3545;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #f88;
+      margin-bottom: 8px;
+      display: none;
     }
+    .error-banner.visible { display: block; }
   </style>
 </head>
 <body>
@@ -162,6 +171,8 @@
     🤖 AI Bridge
     <span class="badge" id="bridgeStatus">Off</span>
   </h2>
+
+  <div class="error-banner" id="errorBanner"></div>
 
   <div class="status-container">
     <div class="status-item">
@@ -174,9 +185,24 @@
     </div>
   </div>
 
-  <div class="controls">
-    <button id="toggleBridge" class="active">🔗 Start Bridge</button>
+  <!-- #3 — turn delay + max turns settings -->
+  <details class="settings-panel" id="settingsPanel">
+    <summary>⚙️ Settings</summary>
+    <div class="setting-row">
+      <label for="turnDelay">Turn delay (seconds)</label>
+      <input type="number" id="turnDelay" min="0" max="120" value="3">
+    </div>
+    <div class="setting-hint">Pause between forwarding a response to the other AI.</div>
+    <div class="setting-row">
+      <label for="maxTurns">Max turns (0 = unlimited)</label>
+      <input type="number" id="maxTurns" min="0" max="999" value="0">
+    </div>
+    <div class="setting-hint">Bridge auto-pauses after this many automated exchanges.</div>
+  </details>
 
+  <div class="controls">
+    <button id="toggleBridge">🔗 Start Bridge</button>
+    <div id="turnCounter"></div>
     <div class="controls-row">
       <button id="syncTabs" class="secondary">📋 Sync Tabs</button>
       <button id="clearLog" class="secondary">🗑️ Clear Log</button>
@@ -188,10 +214,15 @@
     <button id="sendUserMessage" style="margin-top: 8px; width: 100%;">✏️ Send (Interject)</button>
   </div>
 
+  <!-- #4 — export controls -->
   <div>
-    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
       <span style="font-size: 13px; font-weight: bold;">Conversation Log</span>
-      <span style="font-size: 11px; color: #888;" id="messageCount">0 messages</span>
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <span style="font-size: 11px; color: #888;" id="messageCount">0 messages</span>
+        <button id="exportJson" class="secondary" style="padding: 2px 8px; font-size: 11px;">JSON</button>
+        <button id="exportMd" class="secondary" style="padding: 2px 8px; font-size: 11px;">MD</button>
+      </div>
     </div>
     <div class="conversation-log" id="conversationLog"></div>
   </div>

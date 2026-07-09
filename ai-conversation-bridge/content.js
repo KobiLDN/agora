@@ -8,27 +8,62 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-function injectMessage(message) {
-  let inputField = null;
-  let sendButton = null;
-
+// #1 — richer fallback selector chains; warns visibly when nothing is found
+function resolveInputField() {
   if (isDeepSeek) {
-    inputField = document.querySelector('textarea[placeholder*="Ask DeepSeek"]') ||
-                 document.querySelector('textarea[placeholder*="输入"]') ||
-                 document.querySelector('textarea');
-
-    sendButton = document.querySelector('button[type="submit"]') ||
-                 document.querySelector('button[aria-label*="Send"]') ||
-                 document.querySelector('button:has(svg)');
-  } else if (isClaude) {
-    inputField = document.querySelector('div[contenteditable="true"]') ||
-                 document.querySelector('textarea[placeholder*="Message Claude"]');
-
-    sendButton = document.querySelector('button[aria-label*="Send"]') ||
-                 document.querySelector('button[data-testid="send-button"]');
+    return document.querySelector('textarea[placeholder*="Ask DeepSeek"]')
+        || document.querySelector('textarea[placeholder*="输入"]')
+        || document.querySelector('textarea[class*="chat"]')
+        || document.querySelector('textarea');
   }
+  if (isClaude) {
+    return document.querySelector('div[contenteditable="true"][data-placeholder]')
+        || document.querySelector('div[contenteditable="true"]')
+        || document.querySelector('textarea[placeholder*="Message Claude"]')
+        || document.querySelector('textarea[placeholder*="message"]');
+  }
+  return null;
+}
 
-  if (!inputField) return;
+function resolveSendButton() {
+  if (isDeepSeek) {
+    return document.querySelector('button[aria-label*="Send"]')
+        || document.querySelector('button[type="submit"]')
+        || document.querySelector('button[class*="send"]')
+        || document.querySelector('button:has(svg[class*="send"])');
+  }
+  if (isClaude) {
+    return document.querySelector('button[data-testid="send-button"]')
+        || document.querySelector('button[aria-label*="Send"]')
+        || document.querySelector('button[aria-label*="send"]');
+  }
+  return null;
+}
+
+function warnSelectorFailure(what) {
+  const site = isDeepSeek ? 'DeepSeek' : 'Claude';
+  console.warn(`[AI Bridge] Could not find ${what} on ${site}. The site's UI may have changed — see issue #1.`);
+  chrome.runtime.sendMessage({ action: 'selectorError', site, what });
+  indicator.style.background = '#dc3545';
+  indicator.textContent = `⚠️ AI Bridge: ${what} not found`;
+  setTimeout(() => {
+    indicator.style.background = '#4a6cf7';
+    indicator.textContent = '🤖 AI Bridge Connected';
+  }, 4000);
+}
+
+function injectMessage(message) {
+  const inputField = resolveInputField();
+  const sendButton = resolveSendButton();
+
+  if (!inputField) {
+    warnSelectorFailure('input field');
+    return;
+  }
+  if (!sendButton) {
+    warnSelectorFailure('send button');
+    return;
+  }
 
   if (inputField.tagName === 'DIV' && inputField.contentEditable === 'true') {
     inputField.textContent = message;
@@ -40,47 +75,89 @@ function injectMessage(message) {
   }
 
   setTimeout(() => {
-    if (sendButton) {
-      sendButton.click();
-      chrome.runtime.sendMessage({
-        action: 'newMessage',
-        sender: isDeepSeek ? 'DeepSeek' : 'Claude',
-        message
-      });
+    sendButton.click();
+    chrome.runtime.sendMessage({
+      action: 'newMessage',
+      sender: isDeepSeek ? 'DeepSeek' : 'Claude',
+      message
+    });
+  }, 500);
+}
+
+// #2 — wait for streaming to finish before forwarding the response
+function isGenerating() {
+  if (isDeepSeek) {
+    // DeepSeek shows a stop button or a loading spinner while generating
+    return !!(
+      document.querySelector('button[aria-label*="Stop"]') ||
+      document.querySelector('button[class*="stop"]') ||
+      document.querySelector('[class*="loading"]')
+    );
+  }
+  if (isClaude) {
+    // Claude disables the send button and shows a stop button while streaming
+    return !!(
+      document.querySelector('button[aria-label*="Stop"]') ||
+      document.querySelector('button[data-testid="stop-button"]') ||
+      document.querySelector('button[aria-label*="stop"]')
+    );
+  }
+  return false;
+}
+
+function waitForGenerationEnd(callback, maxWaitMs = 60000) {
+  const start = Date.now();
+  const poll = setInterval(() => {
+    if (!isGenerating()) {
+      clearInterval(poll);
+      // Small extra delay to let the DOM settle after streaming stops
+      setTimeout(callback, 300);
+    } else if (Date.now() - start > maxWaitMs) {
+      clearInterval(poll);
+      console.warn('[AI Bridge] Timed out waiting for generation to finish.');
+      callback();
     }
   }, 500);
 }
 
 function observeResponses() {
+  let lastSeenText = '';
+
   const observer = new MutationObserver(() => {
-    const messages = document.querySelectorAll('[data-testid*="message"], [class*="message"], [class*="chat-item"]');
+    const messages = document.querySelectorAll(
+      '[data-testid*="message"], [class*="message"], [class*="chat-item"]'
+    );
     const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) return;
 
-    if (lastMessage && !lastMessage.dataset.processed) {
-      const text = lastMessage.textContent?.trim();
-      if (text && text.length > 0) {
-        lastMessage.dataset.processed = 'true';
+    const isFromAI = !lastMessage.querySelector('[class*="user"]') &&
+                     !lastMessage.querySelector('[data-testid*="user"]');
+    if (!isFromAI) return;
 
-        const isFromAI = !lastMessage.querySelector('[class*="user"]') &&
-                         !lastMessage.querySelector('[data-testid*="user"]');
+    // Wait until streaming is done, then capture the final text
+    if (isGenerating()) return;
 
-        if (isFromAI) {
-          chrome.runtime.sendMessage({
-            action: 'newMessage',
-            sender: isDeepSeek ? 'DeepSeek' : 'Claude',
-            message: text
-          });
-        }
-      }
-    }
+    const text = lastMessage.textContent?.trim();
+    if (!text || text === lastSeenText) return;
+
+    // Mark processed only after generation is confirmed done
+    if (lastMessage.dataset.processed === text) return;
+
+    waitForGenerationEnd(() => {
+      const finalText = lastMessage.textContent?.trim();
+      if (!finalText || lastMessage.dataset.processed === finalText) return;
+      lastMessage.dataset.processed = finalText;
+      lastSeenText = finalText;
+      chrome.runtime.sendMessage({
+        action: 'newMessage',
+        sender: isDeepSeek ? 'DeepSeek' : 'Claude',
+        message: finalText
+      });
+    });
   });
 
   const targetNode = document.querySelector('#root') || document.body;
-  observer.observe(targetNode, {
-    childList: true,
-    subtree: true,
-    characterData: true
-  });
+  observer.observe(targetNode, { childList: true, subtree: true, characterData: true });
 }
 
 if (document.readyState === 'complete') {
@@ -103,6 +180,7 @@ indicator.style.cssText = `
   font-family: -apple-system, sans-serif;
   opacity: 0.7;
   pointer-events: none;
+  transition: background 0.3s;
 `;
 indicator.textContent = '🤖 AI Bridge Connected';
 document.body.appendChild(indicator);
