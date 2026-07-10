@@ -12,7 +12,51 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'getLastResponse') {
     sendResponse({ text: getLastAIResponse() });
   }
+
+  if (message.action === 'debugSnapshot') {
+    sendResponse(buildDebugSnapshot());
+  }
 });
+
+// Diagnostic report of what this content script can currently see in the
+// page — lets the user export troubleshooting data instead of screenshots
+function describeNode(el) {
+  if (!el) return null;
+  return {
+    tag: el.tagName?.toLowerCase(),
+    id: el.id || undefined,
+    classes: (el.className && typeof el.className === 'string')
+      ? el.className.slice(0, 120) : undefined,
+    attrs: {
+      'data-testid': el.getAttribute?.('data-testid') || undefined,
+      'aria-label': el.getAttribute?.('aria-label') || undefined,
+      'data-is-streaming': el.getAttribute?.('data-is-streaming') || undefined,
+      placeholder: el.getAttribute?.('placeholder') || undefined
+    },
+    textPreview: (el.textContent || '').trim().slice(0, 80) || undefined
+  };
+}
+
+function buildDebugSnapshot() {
+  const nodes = Array.from(getMessageNodes());
+  return {
+    site: isDeepSeek ? 'DeepSeek' : isClaude ? 'Claude' : 'unknown',
+    url: window.location.href,
+    timestamp: new Date().toISOString(),
+    inputField: describeNode(resolveInputField()),
+    sendButton: describeNode(resolveSendButton()),
+    isGenerating: isGenerating(),
+    messageNodeCount: nodes.length,
+    lastNodes: nodes.slice(-3).map(n => ({
+      ...describeNode(n),
+      aiBridgeSeen: n.dataset.aiBridgeSeen || undefined,
+      aiBridgePending: n.dataset.aiBridgePending || undefined,
+      isAIMessage: isAIMessage(n)
+    })),
+    recentInjectionCount: recentInjections.length,
+    lastInjectionPreview: recentInjections[recentInjections.length - 1]?.slice(0, 80) || null
+  };
+}
 
 function normalize(t) {
   return (t || '').replace(/\s+/g, ' ').trim();

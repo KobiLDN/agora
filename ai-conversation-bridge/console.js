@@ -1,14 +1,13 @@
-// The popup is only a viewer/controller. All bridge logic (forwarding,
-// turn limits, logging) runs in background.js so it keeps working after
-// this popup closes. State lives in chrome.storage.local; we re-render
-// whenever it changes.
+// Agora Console — full-page dashboard (#16). Same storage-driven pattern as
+// the popup: background.js owns all bridge logic, this page renders state and
+// sends commands. Unlike the popup it survives clicks elsewhere, so it can be
+// left open as a live view of the conversation.
 
-let settings = { turnDelay: 3, maxTurns: 0, labelMessages: true };
+const DEFAULT_SETTINGS = { turnDelay: 3, maxTurns: 0, labelMessages: true };
+let settings = { ...DEFAULT_SETTINGS };
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const saved = await chrome.storage.local.get({
-    settings: { turnDelay: 3, maxTurns: 0, labelMessages: true }
-  });
+  const saved = await chrome.storage.local.get({ settings: DEFAULT_SETTINGS });
   settings = saved.settings;
 
   document.getElementById('turnDelay').value = settings.turnDelay;
@@ -17,16 +16,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   render();
   checkTabs();
+  setInterval(checkTabs, 5000);
 
-  document.getElementById('openConsole').addEventListener('click', () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('console.html') });
-  });
   document.getElementById('toggleBridge').addEventListener('click', toggleBridge);
+  document.getElementById('launchTabs').addEventListener('click', launchTabs);
   document.getElementById('syncTabs').addEventListener('click', syncTabs);
   document.getElementById('clearLog').addEventListener('click', clearLog);
   document.getElementById('sendUserMessage').addEventListener('click', sendUserMessage);
   document.getElementById('forwardClaude').addEventListener('click', () => forwardLast('Claude'));
   document.getElementById('forwardDeepseek').addEventListener('click', () => forwardLast('DeepSeek'));
+  document.getElementById('debugSnapshot').addEventListener('click', debugSnapshot);
   document.getElementById('exportJson').addEventListener('click', exportJson);
   document.getElementById('exportMd').addEventListener('click', exportMarkdown);
   document.getElementById('turnDelay').addEventListener('change', saveSettings);
@@ -41,7 +40,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 });
 
-// Re-render whenever the background worker updates state
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (changes.conversationLog || changes.bridgeActive || changes.turnCount) {
@@ -54,7 +52,7 @@ async function render() {
     bridgeActive: false,
     conversationLog: [],
     turnCount: 0,
-    settings: { turnDelay: 3, maxTurns: 0, labelMessages: true }
+    settings: DEFAULT_SETTINGS
   });
   settings = state.settings;
 
@@ -82,23 +80,47 @@ async function render() {
     counter.textContent = '';
   }
 
-  renderLog(state.conversationLog);
+  renderStream(state.conversationLog);
 }
 
-function renderLog(conversationLog) {
-  const logDiv = document.getElementById('conversationLog');
-  const countSpan = document.getElementById('messageCount');
+function renderStream(conversationLog) {
+  const stream = document.getElementById('stream');
+  const countEl = document.getElementById('messageCount');
+  countEl.textContent = `${conversationLog.length} message${conversationLog.length === 1 ? '' : 's'}`;
 
-  logDiv.innerHTML = conversationLog.map(entry => {
-    const senderClass = entry.sender.toLowerCase();
-    return `<div class="log-entry">
-      <span class="sender ${senderClass}">${entry.sender}:</span>
-      <span class="message">${escapeHtml(entry.message)}</span>
-    </div>`;
-  }).join('');
+  if (!conversationLog.length) {
+    stream.innerHTML = `<div class="empty-hint">No messages yet.<br>
+      Launch the AI tabs, start the bridge, and the conversation will appear here.</div>`;
+    return;
+  }
 
-  countSpan.textContent = `${conversationLog.length} messages`;
-  logDiv.scrollTop = logDiv.scrollHeight;
+  // Only rebuild when something changed (cheap check: count + last timestamp)
+  const sig = `${conversationLog.length}-${conversationLog[conversationLog.length - 1].timestamp}`;
+  if (stream.dataset.sig === sig) return;
+  stream.dataset.sig = sig;
+
+  stream.innerHTML = '';
+  for (const entry of conversationLog) {
+    const div = document.createElement('div');
+    div.className = `msg ${entry.sender.toLowerCase()}`;
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const sender = document.createElement('span');
+    sender.className = 'sender';
+    sender.textContent = entry.sender;
+    const time = document.createElement('span');
+    time.className = 'time';
+    time.textContent = new Date(entry.timestamp).toLocaleTimeString();
+    meta.append(sender, time);
+
+    const body = document.createElement('div');
+    body.textContent = entry.message;
+
+    div.append(meta, body);
+    stream.appendChild(div);
+  }
+  stream.scrollTop = stream.scrollHeight;
 }
 
 function saveSettings() {
@@ -121,11 +143,25 @@ async function checkTabs() {
   }
 
   document.getElementById('deepseekStatus').className = `status-dot ${deepseekFound ? 'online' : 'offline'}`;
-  document.getElementById('deepseekLabel').textContent = deepseekFound ? 'Connected' : 'Not found';
   document.getElementById('claudeStatus').className = `status-dot ${claudeFound ? 'online' : 'offline'}`;
-  document.getElementById('claudeLabel').textContent = claudeFound ? 'Connected' : 'Not found';
 
   await chrome.storage.local.set({ deepseekTabId, claudeTabId });
+  return { deepseekFound, claudeFound };
+}
+
+// Opens any missing AI tab in a separate window so it can be parked out of
+// the way while this console stays the main view
+async function launchTabs() {
+  const { deepseekFound, claudeFound } = await checkTabs();
+  const urls = [];
+  if (!deepseekFound) urls.push('https://chat.deepseek.com');
+  if (!claudeFound) urls.push('https://claude.ai/new');
+
+  if (urls.length) {
+    await chrome.windows.create({ url: urls, focused: false });
+    // give the tabs a moment to register, then re-detect
+    setTimeout(checkTabs, 3000);
+  }
 }
 
 async function syncTabs() {
@@ -143,45 +179,77 @@ async function sendUserMessage() {
   const input = document.getElementById('userInput');
   const message = input.value.trim();
   if (!message) return;
-
   input.value = '';
-  // Background logs it once and delivers to both tabs
   chrome.runtime.sendMessage({ action: 'userMessage', message });
 }
 
 async function forwardLast(from) {
   await checkTabs();
   const result = await chrome.runtime.sendMessage({ action: 'forwardLast', from });
-  if (result && !result.success) {
-    const banner = document.getElementById('errorBanner');
-    banner.textContent = `⚠️ ${result.error}`;
-    banner.classList.add('visible');
-    setTimeout(() => banner.classList.remove('visible'), 6000);
-  }
+  if (result && !result.success) showError(result.error);
 }
 
 function clearLog() {
   chrome.storage.local.set({ conversationLog: [], turnCount: 0 });
+  document.getElementById('stream').dataset.sig = '';
 }
 
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+function showError(text) {
+  const banner = document.getElementById('errorBanner');
+  banner.textContent = `⚠️ ${text}`;
+  banner.classList.add('visible');
+  setTimeout(() => banner.classList.remove('visible'), 6000);
 }
 
-// Selector errors also land in the log via background.js; show the banner
-// too if the popup happens to be open when one fires
 chrome.runtime.onMessage.addListener((message) => {
   if (message.action === 'selectorError') {
-    const banner = document.getElementById('errorBanner');
-    banner.textContent = `⚠️ Could not find ${message.what} on ${message.site}. The site's UI may have changed.`;
-    banner.classList.add('visible');
-    setTimeout(() => banner.classList.remove('visible'), 6000);
+    showError(`Could not find ${message.what} on ${message.site}. The site's UI may have changed.`);
   }
 });
 
-// #4 — export helpers
+// Collects DOM diagnostics from both AI tabs plus bridge state into one
+// JSON report the user can hand to Claude Code for troubleshooting
+async function debugSnapshot() {
+  await checkTabs();
+  const state = await chrome.storage.local.get({
+    bridgeActive: false,
+    turnCount: 0,
+    settings: DEFAULT_SETTINGS,
+    pendingForwards: [],
+    deepseekTabId: null,
+    claudeTabId: null,
+    introSentTo: {}
+  });
+
+  const report = {
+    generatedAt: new Date().toISOString(),
+    bridgeState: {
+      bridgeActive: state.bridgeActive,
+      turnCount: state.turnCount,
+      settings: state.settings,
+      pendingForwardCount: state.pendingForwards.length,
+      introSentTo: state.introSentTo,
+      deepseekTabId: state.deepseekTabId,
+      claudeTabId: state.claudeTabId
+    },
+    tabs: {}
+  };
+
+  for (const [name, tabId] of [['DeepSeek', state.deepseekTabId], ['Claude', state.claudeTabId]]) {
+    if (!tabId) {
+      report.tabs[name] = { error: 'tab not found' };
+      continue;
+    }
+    try {
+      report.tabs[name] = await chrome.tabs.sendMessage(tabId, { action: 'debugSnapshot' });
+    } catch (e) {
+      report.tabs[name] = { error: `unreachable (${e.message}) — reload the tab so the content script loads` };
+    }
+  }
+
+  downloadFile(`agora-debug-${Date.now()}.json`, JSON.stringify(report, null, 2), 'application/json');
+}
+
 function downloadFile(filename, content, mimeType) {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -195,11 +263,7 @@ function downloadFile(filename, content, mimeType) {
 async function exportJson() {
   const { conversationLog } = await chrome.storage.local.get({ conversationLog: [] });
   if (!conversationLog.length) return;
-  downloadFile(
-    `ai-bridge-${Date.now()}.json`,
-    JSON.stringify(conversationLog, null, 2),
-    'application/json'
-  );
+  downloadFile(`ai-bridge-${Date.now()}.json`, JSON.stringify(conversationLog, null, 2), 'application/json');
 }
 
 async function exportMarkdown() {
@@ -209,9 +273,5 @@ async function exportMarkdown() {
     const date = new Date(entry.timestamp).toISOString();
     return `### ${entry.sender} — ${date}\n\n${entry.message}\n`;
   });
-  downloadFile(
-    `ai-bridge-${Date.now()}.md`,
-    `# AI Bridge Conversation\n\n${lines.join('\n---\n\n')}`,
-    'text/markdown'
-  );
+  downloadFile(`ai-bridge-${Date.now()}.md`, `# AI Bridge Conversation\n\n${lines.join('\n---\n\n')}`, 'text/markdown');
 }
