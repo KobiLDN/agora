@@ -220,9 +220,38 @@ async function forwardLastResponse(from) {
   return { success: true };
 }
 
+// Voice commands: a short interject like "stop" / "okay pause" controls the
+// bridge itself, not just the conversation. Only trigger on short messages
+// (≤ 4 words) so "let's stop discussing X and move on" doesn't false-fire.
+const PAUSE_WORDS = ['stop', 'pause', 'halt'];
+const RESUME_WORDS = ['resume', 'continue', 'start'];
+
+function detectCommand(text) {
+  const words = text.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 4) return null;
+  if (words.some(w => PAUSE_WORDS.includes(w))) return 'pause';
+  if (words.some(w => RESUME_WORDS.includes(w))) return 'resume';
+  return null;
+}
+
 // User interjection from the popup → log once, send to both AIs
 async function handleUserMessage(text) {
   await addLogEntry('User', text);
+
+  const command = detectCommand(text);
+  if (command === 'pause') {
+    // stop the bridge and drop in-flight turns so nothing lands after the pause
+    await chrome.storage.local.set({ bridgeActive: false, pendingForwards: [] });
+    const alarms = await chrome.alarms.getAll();
+    for (const a of alarms) {
+      if (a.name.startsWith('forward-')) chrome.alarms.clear(a.name);
+    }
+    await addLogEntry('System', 'Bridge paused by voice command.');
+  } else if (command === 'resume') {
+    await chrome.storage.local.set({ bridgeActive: true, turnCount: 0 });
+    await addLogEntry('System', 'Bridge resumed by voice command.');
+  }
+
   const state = await getState();
   const outgoing = state.settings.labelMessages ? `[Human]: ${text}` : text;
 
