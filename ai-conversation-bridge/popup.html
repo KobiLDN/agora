@@ -223,7 +223,15 @@
 
   <div class="input-area">
     <textarea id="userInput" placeholder="Type your message to interject..."></textarea>
-    <button id="sendUserMessage" style="margin-top: 8px; width: 100%;">✏️ Send (Interject)</button>
+    <div style="display: flex; gap: 8px; margin-top: 8px;">
+      <select id="interjectTarget" style="background: #2a2a2a; border: 1px solid #444; border-radius: 6px; color: #e0e0e0; font-size: 13px; padding: 0 8px;"
+              title="Who receives the interject. One side is recommended — the other AI hears it through the relay. Voice commands always reach both.">
+        <option value="Claude">→ Claude</option>
+        <option value="DeepSeek">→ DeepSeek</option>
+        <option value="Both">→ Both</option>
+      </select>
+      <button id="sendUserMessage" style="flex: 1;">✏️ Send (Interject)</button>
+    </div>
   </div>
 
   <!-- #4 — export controls -->

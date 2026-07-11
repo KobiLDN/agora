@@ -3,7 +3,7 @@
 // sends commands. Unlike the popup it survives clicks elsewhere, so it can be
 // left open as a live view of the conversation.
 
-const DEFAULT_SETTINGS = { turnDelay: 3, maxTurns: 0, labelMessages: true };
+const DEFAULT_SETTINGS = { turnDelay: 3, maxTurns: 0, labelMessages: true, interjectTarget: 'Claude' };
 let settings = { ...DEFAULT_SETTINGS };
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -13,6 +13,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('turnDelay').value = settings.turnDelay;
   document.getElementById('maxTurns').value = settings.maxTurns;
   document.getElementById('labelMessages').checked = settings.labelMessages !== false;
+  document.getElementById('interjectTarget').value = settings.interjectTarget || 'Claude';
+  document.getElementById('interjectTarget').addEventListener('change', saveSettings);
 
   render();
   checkTabs();
@@ -127,6 +129,7 @@ function saveSettings() {
   settings.turnDelay = Math.max(0, parseInt(document.getElementById('turnDelay').value) || 0);
   settings.maxTurns = Math.max(0, parseInt(document.getElementById('maxTurns').value) || 0);
   settings.labelMessages = document.getElementById('labelMessages').checked;
+  settings.interjectTarget = document.getElementById('interjectTarget').value;
   chrome.storage.local.set({ settings });
 }
 
@@ -180,7 +183,11 @@ async function sendUserMessage() {
   const message = input.value.trim();
   if (!message) return;
   input.value = '';
-  chrome.runtime.sendMessage({ action: 'userMessage', message });
+  chrome.runtime.sendMessage({
+    action: 'userMessage',
+    message,
+    target: document.getElementById('interjectTarget').value
+  });
 }
 
 async function forwardLast(from) {

@@ -7,7 +7,7 @@ const DEFAULTS = {
   conversationLog: [],
   deepseekTabId: null,
   claudeTabId: null,
-  settings: { turnDelay: 3, maxTurns: 0, labelMessages: true },
+  settings: { turnDelay: 3, maxTurns: 0, labelMessages: true, interjectTarget: 'Claude' },
   turnCount: 0,
   // whether each site has already received the one-time bridge intro
   introSentTo: { DeepSeek: false, Claude: false },
@@ -116,7 +116,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === 'userMessage') {
-    handleUserMessage(message.message);
+    handleUserMessage(message.message, message.target);
     sendResponse({ success: true });
   }
 
@@ -234,8 +234,14 @@ function detectCommand(text) {
   return null;
 }
 
-// User interjection from the popup → log once, send to both AIs
-async function handleUserMessage(text) {
+// User interjection from the popup/console → log once, deliver to the chosen
+// target. Broadcasting to both AIs made both reply at once, spawning two
+// parallel forwarding chains that tangled the conversation (diagnosed by the
+// bridged AIs themselves reviewing this code) — so normal interjects go to
+// ONE side and reach the other through the ordinary relay path. Voice
+// commands still go to both: the bridge is paused/reset at that moment, so
+// no reply chains can start, and both AIs should know why it stopped.
+async function handleUserMessage(text, target) {
   await addLogEntry('User', text);
 
   const command = detectCommand(text);
@@ -255,7 +261,12 @@ async function handleUserMessage(text) {
   const state = await getState();
   const outgoing = state.settings.labelMessages ? `[Human]: ${text}` : text;
 
-  for (const tabId of [state.deepseekTabId, state.claudeTabId]) {
+  const resolved = command ? 'Both' : (target || state.settings.interjectTarget || 'Claude');
+  const targets = [];
+  if (resolved === 'Both' || resolved === 'DeepSeek') targets.push(state.deepseekTabId);
+  if (resolved === 'Both' || resolved === 'Claude') targets.push(state.claudeTabId);
+
+  for (const tabId of targets) {
     if (!tabId) continue;
     try {
       await chrome.tabs.sendMessage(tabId, { action: 'sendMessage', message: outgoing, sender: 'user' });

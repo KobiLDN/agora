@@ -158,6 +158,17 @@
       font-size: 14px;
     }
     .interject-bar textarea:focus { outline: none; border-color: #4a6cf7; }
+    .interject-bar select {
+      padding: 0 10px;
+      background: #141414;
+      border: 1px solid #3a3a3a;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .interject-bar select:focus { outline: none; border-color: #4a6cf7; }
 
     /* ---- buttons ---- */
     button {
@@ -245,6 +256,11 @@
       </div>
       <div class="interject-bar">
         <textarea id="userInput" placeholder='Interject as [Human]… ("stop" pauses the bridge, "resume" restarts it)'></textarea>
+        <select id="interjectTarget" title="Who receives the interject. One side is recommended — the other AI hears it through the relay. Voice commands always reach both.">
+          <option value="Claude">→ Claude</option>
+          <option value="DeepSeek">→ DeepSeek</option>
+          <option value="Both">→ Both</option>
+        </select>
         <button id="sendUserMessage">Send</button>
       </div>
     </div>

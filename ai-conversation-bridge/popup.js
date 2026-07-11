@@ -3,17 +3,19 @@
 // this popup closes. State lives in chrome.storage.local; we re-render
 // whenever it changes.
 
-let settings = { turnDelay: 3, maxTurns: 0, labelMessages: true };
+let settings = { turnDelay: 3, maxTurns: 0, labelMessages: true, interjectTarget: 'Claude' };
 
 document.addEventListener('DOMContentLoaded', async () => {
   const saved = await chrome.storage.local.get({
-    settings: { turnDelay: 3, maxTurns: 0, labelMessages: true }
+    settings: { turnDelay: 3, maxTurns: 0, labelMessages: true, interjectTarget: 'Claude' }
   });
   settings = saved.settings;
 
   document.getElementById('turnDelay').value = settings.turnDelay;
   document.getElementById('maxTurns').value = settings.maxTurns;
   document.getElementById('labelMessages').checked = settings.labelMessages !== false;
+  document.getElementById('interjectTarget').value = settings.interjectTarget || 'Claude';
+  document.getElementById('interjectTarget').addEventListener('change', saveSettings);
 
   render();
   checkTabs();
@@ -54,7 +56,7 @@ async function render() {
     bridgeActive: false,
     conversationLog: [],
     turnCount: 0,
-    settings: { turnDelay: 3, maxTurns: 0, labelMessages: true }
+    settings: { turnDelay: 3, maxTurns: 0, labelMessages: true, interjectTarget: 'Claude' }
   });
   settings = state.settings;
 
@@ -105,6 +107,7 @@ function saveSettings() {
   settings.turnDelay = Math.max(0, parseInt(document.getElementById('turnDelay').value) || 0);
   settings.maxTurns = Math.max(0, parseInt(document.getElementById('maxTurns').value) || 0);
   settings.labelMessages = document.getElementById('labelMessages').checked;
+  settings.interjectTarget = document.getElementById('interjectTarget').value;
   chrome.storage.local.set({ settings });
 }
 
@@ -145,8 +148,13 @@ async function sendUserMessage() {
   if (!message) return;
 
   input.value = '';
-  // Background logs it once and delivers to both tabs
-  chrome.runtime.sendMessage({ action: 'userMessage', message });
+  // Background logs it once and delivers to the selected target; the other
+  // AI hears it through the normal relay path
+  chrome.runtime.sendMessage({
+    action: 'userMessage',
+    message,
+    target: document.getElementById('interjectTarget').value
+  });
 }
 
 async function forwardLast(from) {
