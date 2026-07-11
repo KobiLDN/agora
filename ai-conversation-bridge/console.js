@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('sendUserMessage').addEventListener('click', sendUserMessage);
   document.getElementById('forwardClaude').addEventListener('click', () => forwardLast('Claude'));
   document.getElementById('forwardDeepseek').addEventListener('click', () => forwardLast('DeepSeek'));
+  document.getElementById('shareLog').addEventListener('click', shareLog);
   document.getElementById('debugSnapshot').addEventListener('click', debugSnapshot);
   document.getElementById('exportJson').addEventListener('click', exportJson);
   document.getElementById('exportMd').addEventListener('click', exportMarkdown);
@@ -188,6 +189,13 @@ async function sendUserMessage() {
     message,
     target: document.getElementById('interjectTarget').value
   });
+}
+
+async function shareLog() {
+  await checkTabs();
+  const target = document.getElementById('interjectTarget').value;
+  const result = await chrome.runtime.sendMessage({ action: 'shareLog', target });
+  if (result && !result.success) showError(result.error);
 }
 
 async function forwardLast(from) {

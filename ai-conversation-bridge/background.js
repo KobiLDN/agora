@@ -125,6 +125,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.action === 'shareLog') {
+    shareLog(message.target).then((result) => sendResponse(result));
+    return true;
+  }
+
   if (message.action === 'selectorError') {
     addLogEntry('System', `⚠️ Could not find ${message.what} on ${message.site} — its UI may have changed.`);
     sendResponse({ success: true });
@@ -274,6 +279,53 @@ async function handleUserMessage(text, target) {
       // tab gone; syncTabs will clean up
     }
   }
+}
+
+// Injects the bridge's conversation log directly into an AI's chat input,
+// so the AIs can read the bridge's-eye view (attribution, timestamps, System
+// entries) without the user downloading and re-uploading the export.
+// The payload is NOT added to the log itself — that would snowball on the
+// next share — only a short System entry recording that a share happened.
+const SHARE_LOG_MAX_CHARS = 15000;
+
+async function shareLog(target) {
+  const state = await getState();
+  const log = state.conversationLog;
+  if (!log.length) return { success: false, error: 'Log is empty — nothing to share.' };
+
+  let body = log
+    .map(e => `[${new Date(e.timestamp).toLocaleTimeString()}] ${e.sender}: ${e.message}`)
+    .join('\n\n');
+  if (body.length > SHARE_LOG_MAX_CHARS) {
+    body = '…(earlier messages truncated)…\n\n' + body.slice(-SHARE_LOG_MAX_CHARS);
+  }
+
+  const outgoing =
+    `[Human moderator: sharing the bridge's conversation log below for your reference — ` +
+    `this is the extension's own record (with attribution and timestamps), not a new ` +
+    `conversational turn. Acknowledge briefly; no need to re-analyze every entry.]\n\n${body}`;
+
+  const resolved = target || 'Both';
+  const targets = [];
+  if (resolved === 'Both' || resolved === 'DeepSeek') targets.push(['DeepSeek', state.deepseekTabId]);
+  if (resolved === 'Both' || resolved === 'Claude') targets.push(['Claude', state.claudeTabId]);
+
+  const delivered = [];
+  for (const [name, tabId] of targets) {
+    if (!tabId) continue;
+    try {
+      await chrome.tabs.sendMessage(tabId, { action: 'sendMessage', message: outgoing, sender: 'user' });
+      delivered.push(name);
+    } catch (e) {
+      // tab gone; syncTabs will clean up
+    }
+  }
+
+  if (!delivered.length) {
+    return { success: false, error: 'No reachable AI tab — try Sync Tabs and reload the pages.' };
+  }
+  await addLogEntry('System', `Log shared with ${delivered.join(' and ')} (${log.length} messages).`);
+  return { success: true };
 }
 
 async function syncTabs() {
