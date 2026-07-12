@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('toggleBridge').addEventListener('click', toggleBridge);
   document.getElementById('launchTabs').addEventListener('click', launchTabs);
   document.getElementById('syncTabs').addEventListener('click', syncTabs);
+  document.getElementById('resetConnection').addEventListener('click', resetConnection);
   document.getElementById('clearLog').addEventListener('click', clearLog);
   document.getElementById('sendUserMessage').addEventListener('click', sendUserMessage);
   document.getElementById('forwardClaude').addEventListener('click', () => forwardLast('Claude'));
@@ -171,6 +172,12 @@ async function launchTabs() {
 async function syncTabs() {
   await checkTabs();
   await chrome.runtime.sendMessage({ action: 'syncTabs' });
+}
+
+async function resetConnection() {
+  await chrome.runtime.sendMessage({ action: 'resetConnection' });
+  await checkTabs();
+  render();
 }
 
 async function toggleBridge() {

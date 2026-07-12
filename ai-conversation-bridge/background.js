@@ -126,7 +126,10 @@ async function labelText(from, target, text, state) {
             `with nothing else after it (a preceding line break helps clarity but isn't required). ` +
             `Merely mentioning or discussing the token earlier in a message will NOT trigger ` +
             `anything — only trailing use does. Once both sides end a message that way, the ` +
-            `bridge will stop automatically.]\n\n`;
+            `bridge will stop automatically. IMPORTANT: if you notice you and the other AI are ` +
+            `just repeating "agreed" / "nothing more to add" / "standing by" back and forth with ` +
+            `no new content, that repetition IS the natural conclusion — use the token right ` +
+            `then instead of continuing to trade acknowledgments in prose.]\n\n`;
     const introSentTo = { ...state.introSentTo, [target]: true };
     await chrome.storage.local.set({ introSentTo });
   }
@@ -165,6 +168,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'syncTabs') {
     syncTabs();
     sendResponse({ success: true });
+  }
+
+  if (message.action === 'resetConnection') {
+    resetConnection().then(() => sendResponse({ success: true }));
+    return true;
   }
 
   if (message.action === 'newMessage') {
@@ -385,6 +393,28 @@ async function shareLog(target) {
   }
   await addLogEntry('System', `Log shared with ${delivered.join(' and ')} (${log.length} messages).`);
   return { success: true };
+}
+
+// Lighter-weight recovery for a wedged bridge than closing all of Chrome
+// (which was the only thing that worked in a live session where reloading
+// the extension + refreshing the tab didn't clear a stuck "Could not
+// establish connection" delivery failure). Clears everything that could be
+// holding stale state — tab IDs, in-flight forwards, backstop alarms,
+// the stop-token and intro-sent trackers — then re-scans for the tabs.
+async function resetConnection() {
+  const alarms = await chrome.alarms.getAll();
+  for (const a of alarms) {
+    if (a.name.startsWith('forward-')) chrome.alarms.clear(a.name);
+  }
+  await chrome.storage.local.set({
+    deepseekTabId: null,
+    claudeTabId: null,
+    pendingForwards: [],
+    lastStop: null,
+    introSentTo: { DeepSeek: false, Claude: false }
+  });
+  await addLogEntry('System', 'Connection state reset — re-scanning for tabs.');
+  await syncTabs();
 }
 
 async function syncTabs() {
