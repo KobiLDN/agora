@@ -28,15 +28,26 @@ const DEFAULTS = {
 const STOP_TOKEN = '[STOP_BRIDGE]';
 const STOP_WINDOW_MS = 3 * 60 * 1000;
 
-// Caught live: a plain .includes() check fired while the AIs were merely
-// *discussing* the token during design (mid-message mentions, quoted in
-// explanation) — the bridge stopped twice mid-conversation before the
-// feature even shipped. Fix (converged on by the AIs themselves after a
-// regex-anchoring false start): the token must be the entire last non-empty
-// line of the message — a genuine sign-off, not a mention.
+// Caught live (round 1): a plain .includes() check fired while the AIs were
+// merely *discussing* the token during design (mid-message mentions, quoted
+// in explanation) — the bridge stopped twice before the feature even
+// shipped. First fix required the token to be the entire last non-empty
+// *line* of the message.
+//
+// Caught live (round 2): that line-based check can silently fail even when
+// an AI formats the sign-off exactly as instructed. getMessageText() reads
+// DOM textContent, and a chat UI that renders a markdown soft-break as <br>
+// within a single paragraph (rather than a separate <p>) produces no real
+// "\n" character in textContent — "closing sentence" and "[STOP_BRIDGE]"
+// arrive glued together with zero separator, so "last line" never isolates
+// the token at all.
+//
+// Fix: don't depend on a newline surviving extraction. The token just needs
+// to be the literal trailing content of the message, nothing after it — that
+// alone still rejects the original false-positive (which had explanatory
+// text following the token), without requiring a DOM-fragile line break.
 function endsWithStopToken(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-  return lines.length > 0 && lines[lines.length - 1] === STOP_TOKEN;
+  return text.trim().endsWith(STOP_TOKEN);
 }
 
 async function checkMutualStop(message) {
@@ -110,11 +121,12 @@ async function labelText(from, target, text, state) {
             `Messages prefixed [${from}] are written by that AI, not by a human. ` +
             `A human moderator supervises and may interject; their messages are prefixed [Human]. ` +
             `When you and the other AI have both independently reached a genuine natural ` +
-            `conclusion — not just a lull, and not proactively suggesting it end — put the ` +
-            `literal token ${STOP_TOKEN} alone on its own final line (nothing else on that ` +
-            `line, and nothing after it). Merely mentioning or discussing the token elsewhere ` +
-            `in a message will NOT trigger anything. Once both sides end a message that way, ` +
-            `the bridge will stop automatically.]\n\n`;
+            `conclusion — not just a lull, and not proactively suggesting it end — end your ` +
+            `ENTIRE message with the literal token ${STOP_TOKEN} as the very last characters, ` +
+            `with nothing else after it (a preceding line break helps clarity but isn't required). ` +
+            `Merely mentioning or discussing the token earlier in a message will NOT trigger ` +
+            `anything — only trailing use does. Once both sides end a message that way, the ` +
+            `bridge will stop automatically.]\n\n`;
     const introSentTo = { ...state.introSentTo, [target]: true };
     await chrome.storage.local.set({ introSentTo });
   }
