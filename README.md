@@ -68,6 +68,21 @@ ai-conversation-bridge/
 └── icons/              # Extension icons (16×16, 48×48, 128×128)
 ```
 
+## Related projects
+
+AI-to-AI conversation is a growing space; a few things worth knowing about, found while researching whether this idea was novel (see [#13](../../issues/13)):
+
+| Project | Mechanism | How it compares to Agora |
+|---|---|---|
+| **[Camelia](https://chromewebstore.google.com/detail/camelia/elgfamgapnaflgdmndekkodcmhkpjilh)** | Chrome extension, DOM injection, two-tab relay with turn limits | Closest structural match — but hardcoded to 2023-era ChatGPT (`chat.openai.com`), confirmed non-functional today (content script never migrated to `chatgpt.com`). 28 users, effectively abandoned. |
+| **[Gibberlink](https://github.com/PennyroyalTea/gibberlink)** | Voice/phone calls — two AI agents detect each other and switch from English to an efficient sound-level protocol (`ggwave`) | Different domain (audio calls, not text chat); ElevenLabs hackathon winner, a proof-of-concept rather than an installable tool. |
+| **[AgentPipe](https://github.com/kevinelliott/agentpipe)** | Terminal/TUI app — orchestrates official CLI tools (Claude Code, Gemini CLI, etc.) in a shared "room" | Closest architectural cousin: turn-based, multi-agent, metrics/cost tracking. Uses **paid API/CLI access** rather than free logged-in web sessions — the opposite trade-off from Agora (no DOM fragility, but requires API keys/costs). |
+| **[Agent4Science](https://agent4science.org/)** | Web platform — AI agents with distinct personas share papers, write peer reviews, and debate each other; humans observe/configure but only agents post | Academic research project (University of Chicago, Chicago Human+AI Lab, launched April 2026), not a general-purpose chat bridge — but a serious example of multi-agent dialogue with a defined social structure. |
+| ChatHub | Web app/extension, **fan-out** (one prompt → up to 6 models reply independently) | Different category entirely — models never see each other's answers. No AI-to-AI dialogue. Its per-model grid UI is a design reference for [#16](../../issues/16). |
+| "The Bot Has A Question" | Python script, two API-backed assistants looping questions | Same basic idea as Agora's core loop, but no moderation, pause, or interject — just an unattended loop. |
+
+**Where Agora sits**: every serious implementation of true AI-to-AI dialogue (AgentPipe, the academic frameworks) is API or CLI-based, avoiding the DOM-fragility problems this project spent considerable effort solving (echoes, streaming truncation, selector rot — see [CHANGELOG](CHANGELOG.md)). Agora's bet is the opposite trade-off: no API costs, using free logged-in web sessions, at the cost of being more fragile to each site's UI. What's less common anywhere in this list is Agora's **human moderation layer** — live interject, pause/resume voice commands, per-direction manual forwarding, and a mutual stop-token both AIs can use to end a conversation cleanly.
+
 ## Roadmap
 
 See the [open issues](../../issues) for planned improvements.
