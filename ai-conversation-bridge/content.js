@@ -373,19 +373,22 @@ if (document.readyState === 'complete') {
   window.addEventListener('load', observeResponses);
 }
 
+// Bottom-left, not top-right — top-right is where both DeepSeek and Claude
+// put their own controls (model picker, share, new-chat icons), and the
+// indicator was covering them.
 const indicator = document.createElement('div');
 indicator.style.cssText = `
   position: fixed;
-  top: 10px;
-  right: 10px;
+  bottom: 10px;
+  left: 10px;
   background: #4a6cf7;
   color: white;
-  padding: 4px 12px;
+  padding: 3px 10px;
   border-radius: 20px;
-  font-size: 12px;
+  font-size: 11px;
   z-index: 9999;
   font-family: -apple-system, sans-serif;
-  opacity: 0.7;
+  opacity: 0.55;
   pointer-events: none;
   transition: background 0.3s;
 `;

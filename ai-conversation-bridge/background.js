@@ -28,8 +28,19 @@ const DEFAULTS = {
 const STOP_TOKEN = '[STOP_BRIDGE]';
 const STOP_WINDOW_MS = 3 * 60 * 1000;
 
+// Caught live: a plain .includes() check fired while the AIs were merely
+// *discussing* the token during design (mid-message mentions, quoted in
+// explanation) — the bridge stopped twice mid-conversation before the
+// feature even shipped. Fix (converged on by the AIs themselves after a
+// regex-anchoring false start): the token must be the entire last non-empty
+// line of the message — a genuine sign-off, not a mention.
+function endsWithStopToken(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  return lines.length > 0 && lines[lines.length - 1] === STOP_TOKEN;
+}
+
 async function checkMutualStop(message) {
-  if (!message.message.includes(STOP_TOKEN)) return false;
+  if (!endsWithStopToken(message.message)) return false;
 
   const { lastStop } = await getState();
   const now = Date.now();
@@ -99,9 +110,11 @@ async function labelText(from, target, text, state) {
             `Messages prefixed [${from}] are written by that AI, not by a human. ` +
             `A human moderator supervises and may interject; their messages are prefixed [Human]. ` +
             `When you and the other AI have both independently reached a genuine natural ` +
-            `conclusion — not just a lull, and not proactively suggesting it end — end your ` +
-            `message with the literal token ${STOP_TOKEN}. Once both sides have done so, the ` +
-            `bridge will stop automatically.]\n\n`;
+            `conclusion — not just a lull, and not proactively suggesting it end — put the ` +
+            `literal token ${STOP_TOKEN} alone on its own final line (nothing else on that ` +
+            `line, and nothing after it). Merely mentioning or discussing the token elsewhere ` +
+            `in a message will NOT trigger anything. Once both sides end a message that way, ` +
+            `the bridge will stop automatically.]\n\n`;
     const introSentTo = { ...state.introSentTo, [target]: true };
     await chrome.storage.local.set({ introSentTo });
   }
