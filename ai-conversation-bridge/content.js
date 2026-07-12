@@ -373,14 +373,15 @@ if (document.readyState === 'complete') {
   window.addEventListener('load', observeResponses);
 }
 
-// Bottom-left, not top-right — top-right is where both DeepSeek and Claude
-// put their own controls (model picker, share, new-chat icons), and the
-// indicator was covering them.
+// Top-center — both DeepSeek and Claude keep their own controls in the top
+// corners (model picker, share, new-chat icons) but leave the top-center
+// header strip empty, so that's a genuinely dead zone on both sites.
 const indicator = document.createElement('div');
 indicator.style.cssText = `
   position: fixed;
-  bottom: 10px;
-  left: 10px;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
   background: #4a6cf7;
   color: white;
   padding: 3px 10px;
