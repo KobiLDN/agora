@@ -13,8 +13,35 @@ const DEFAULTS = {
   introSentTo: { DeepSeek: false, Claude: false },
   // forwards waiting out their turn delay — persisted because a bare
   // setTimeout dies with the service worker and the forward is lost
-  pendingForwards: []
+  pendingForwards: [],
+  // last AI to emit the mutual-stop token, for the two-turn agreement check
+  lastStop: null
 };
+
+// ---- Mutual stop (designed collaboratively by the bridged AIs themselves,
+// see #17-era session) — lets both AIs agree the conversation has reached a
+// natural conclusion instead of looping polite sign-offs until max-turns
+// fires. Detection is mechanical (exact token, both sides, within a window)
+// rather than inferring "sounds like a goodbye" from free text — the AIs'
+// own design rationale: inferred intent is exactly what produced the
+// looping sign-offs in the first place.
+const STOP_TOKEN = '[STOP_BRIDGE]';
+const STOP_WINDOW_MS = 3 * 60 * 1000;
+
+async function checkMutualStop(message) {
+  if (!message.message.includes(STOP_TOKEN)) return false;
+
+  const { lastStop } = await getState();
+  const now = Date.now();
+
+  if (lastStop && lastStop.sender !== message.sender && (now - lastStop.time) < STOP_WINDOW_MS) {
+    await chrome.storage.local.set({ bridgeActive: false, lastStop: null });
+    await addLogEntry('System', 'Bridge stopped — both AIs signaled agreement.');
+    return true;
+  }
+  await chrome.storage.local.set({ lastStop: { sender: message.sender, time: now } });
+  return false;
+}
 
 // ---- Reliable delayed forwarding -------------------------------------
 // A setTimeout in an MV3 service worker is silently discarded if Chrome
@@ -70,7 +97,11 @@ async function labelText(from, target, text, state) {
   if (!state.introSentTo[target]) {
     intro = `[Bridge notice: You are in a relayed conversation with another AI, ${from}. ` +
             `Messages prefixed [${from}] are written by that AI, not by a human. ` +
-            `A human moderator supervises and may interject; their messages are prefixed [Human].]\n\n`;
+            `A human moderator supervises and may interject; their messages are prefixed [Human]. ` +
+            `When you and the other AI have both independently reached a genuine natural ` +
+            `conclusion — not just a lull, and not proactively suggesting it end — end your ` +
+            `message with the literal token ${STOP_TOKEN}. Once both sides have done so, the ` +
+            `bridge will stop automatically.]\n\n`;
     const introSentTo = { ...state.introSentTo, [target]: true };
     await chrome.storage.local.set({ introSentTo });
   }
@@ -100,7 +131,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // fresh session → re-send the intro to each site
       introSentTo: { DeepSeek: false, Claude: false },
       // drop anything still queued from the previous session
-      pendingForwards: []
+      pendingForwards: [],
+      lastStop: null
     });
     sendResponse({ success: true });
   }
@@ -153,6 +185,8 @@ async function handleNewMessage(message) {
   if (isDuplicate) return;
 
   await addLogEntry(message.sender, message.message);
+
+  if (await checkMutualStop(message)) return;
 
   const state = await getState();
   if (!state.bridgeActive) return;
