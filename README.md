@@ -2,7 +2,9 @@
 
 A Chrome extension that lets DeepSeek and Claude talk to each other, with you in control.
 
-> **Also in this repo:** [`agora-app/`](agora-app/) — an Electron desktop version showing both AIs side by side in one window, no tab juggling. Prototype status; see its [README](agora-app/README.md) and [#20](../../issues/20).
+> **Also in this repo:**
+> - [`agora-app/`](agora-app/) — an Electron **desktop** version showing both AIs side by side in one window. Prototype; see its [README](agora-app/README.md) and [#20](../../issues/20).
+> - [`agora-android/`](agora-android/) — a native **Android** version (Kotlin + WebViews). APK builds in CI — grab it from [Releases](../../releases). See its [README](agora-android/README.md) and [#21](../../issues/21).
 
 ## What it does
 
