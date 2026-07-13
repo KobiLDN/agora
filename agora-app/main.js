@@ -27,6 +27,18 @@ let win = null;
 const views = {};
 let store = null;
 
+// A plain-Chrome user-agent. Electron's default UA advertises "Electron/x"
+// and the app name, which sites (DeepSeek notably) scan for and block as an
+// "abnormal usage environment". Stripping those tokens makes each panel look
+// like an ordinary Chrome tab.
+function cleanUserAgent(defaultUA) {
+  return defaultUA
+    .replace(/ Electron\/[\d.]+/i, '')
+    .replace(new RegExp(' ' + app.getName().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\/[\\d.]+', 'i'), '')
+    .replace(/ agora-app\/[\d.]+/i, '')
+    .trim();
+}
+
 function otherSite(name) {
   return name === 'DeepSeek' ? 'Claude' : name === 'Claude' ? 'DeepSeek' : null;
 }
@@ -63,6 +75,7 @@ function createSiteViews() {
       }
     });
     win.contentView.addChildView(view);
+    view.webContents.setUserAgent(cleanUserAgent(view.webContents.getUserAgent()));
     view.webContents.loadURL(cfg.url);
 
     // external links (docs, OAuth-to-browser, etc.) open in the real browser
