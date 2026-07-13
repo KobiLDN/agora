@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Agora</title>
+  <style>
+    /* Layout constants must match HEADER_H / FOOTER_H / LOG_W in main.js */
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: #141414;
+      color: #e0e0e0;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ---- header (56px) ---- */
+    header {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 16px;
+      background: #1e1e1e;
+      border-bottom: 1px solid #2e2e2e;
+      z-index: 10;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 16px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+    .badge {
+      font-size: 11px;
+      background: #333;
+      padding: 2px 10px;
+      border-radius: 12px;
+      color: #aaa;
+    }
+    #turnCounter { color: #888; font-size: 12px; }
+    .header-spacer { flex: 1; }
+    .site-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #bbb;
+    }
+    .site-controls .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      display: inline-block; background: #f44336;
+    }
+    .site-controls .dot.online { background: #4caf50; }
+    .site-controls button {
+      padding: 3px 8px;
+      font-size: 11px;
+    }
+
+    /* ---- left panel (360px) ---- */
+    .panel {
+      position: fixed;
+      top: 56px; bottom: 76px; left: 0;
+      width: 360px;
+      background: #1a1a1a;
+      border-right: 1px solid #2e2e2e;
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+    }
+    .panel-controls {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border-bottom: 1px solid #2e2e2e;
+    }
+    .section h3 {
+      margin: 0 0 6px 0;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #777;
+    }
+    .section { display: flex; flex-direction: column; gap: 6px; }
+    .btn-row { display: flex; gap: 6px; }
+    .btn-row button { flex: 1; }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+      color: #bbb;
+    }
+    .setting-row input[type="number"] {
+      width: 60px;
+      padding: 3px 6px;
+      background: #141414;
+      border: 1px solid #3a3a3a;
+      border-radius: 5px;
+      color: #e0e0e0;
+      font-size: 12px;
+      text-align: right;
+    }
+    .setting-row input:focus { outline: none; border-color: #4a6cf7; }
+
+    /* ---- log stream ---- */
+    .stream {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 12px;
+    }
+    .msg {
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #1f1f1f;
+      border: 1px solid #2a2a2a;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.45;
+    }
+    .msg .meta { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
+    .msg .sender { font-weight: 700; font-size: 11px; }
+    .msg .time { font-size: 10px; color: #666; }
+    .msg.deepseek { border-left: 3px solid #4a6cf7; }
+    .msg.deepseek .sender { color: #4a6cf7; }
+    .msg.claude { border-left: 3px solid #d97706; }
+    .msg.claude .sender { color: #d97706; }
+    .msg.user { border-left: 3px solid #10b981; background: #14241d; }
+    .msg.user .sender { color: #10b981; }
+    .msg.system {
+      background: transparent; border: none;
+      color: #888; font-size: 11px; font-style: italic; padding: 2px;
+    }
+    .msg.system .meta { display: none; }
+    .empty-hint { margin: auto; text-align: center; color: #555; font-size: 12px; line-height: 1.8; }
+
+    /* ---- footer / interject bar (76px) ---- */
+    footer {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 76px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 0 16px;
+      background: #1e1e1e;
+      border-top: 1px solid #2e2e2e;
+      z-index: 10;
+    }
+    footer textarea {
+      flex: 1;
+      height: 48px;
+      padding: 10px 12px;
+      background: #141414;
+      border: 1px solid #3a3a3a;
+      border-radius: 8px;
+      color: #e0e0e0;
+      resize: none;
+      font-family: inherit;
+      font-size: 13px;
+    }
+    footer textarea:focus { outline: none; border-color: #4a6cf7; }
+    footer select {
+      height: 48px;
+      padding: 0 10px;
+      background: #141414;
+      border: 1px solid #3a3a3a;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 13px;
+      font-family: inherit;
+    }
+
+    /* ---- shared button styling ---- */
+    button {
+      padding: 8px 14px;
+      border: none;
+      border-radius: 7px;
+      background: #4a6cf7;
+      color: white;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    button:hover { background: #5f7ff7; }
+    button.secondary { background: #2c2c2c; }
+    button.secondary:hover { background: #3a3a3a; }
+    button.danger, #toggleBridge.active { background: #dc3545; }
+
+    /* ---- error banner ---- */
+    .error-banner {
+      position: fixed;
+      top: 62px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #5c1a1a;
+      border: 1px solid #dc3545;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 13px;
+      color: #f88;
+      display: none;
+      z-index: 20;
+    }
+    .error-banner.visible { display: block; }
+
+    /* central region is intentionally empty — the two WebContentsViews are
+       layered on top of it by the main process */
+    .views-hint {
+      position: fixed;
+      top: 56px; bottom: 76px; left: 360px; right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #444;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🏛️ Agora <span class="badge" id="bridgeStatus">Off</span></h1>
+    <span id="turnCounter"></span>
+    <div class="header-spacer"></div>
+    <div class="site-controls">
+      <span class="dot" id="dotDeepSeek"></span> DeepSeek
+      <button class="secondary" id="reloadDeepSeek" title="Reload the DeepSeek panel">⟳</button>
+      <button class="secondary" id="devtoolsDeepSeek" title="Open DevTools for the DeepSeek panel">🔧</button>
+      <span style="width:12px"></span>
+      <span class="dot" id="dotClaude"></span> Claude
+      <button class="secondary" id="reloadClaude" title="Reload the Claude panel">⟳</button>
+      <button class="secondary" id="devtoolsClaude" title="Open DevTools for the Claude panel">🔧</button>
+    </div>
+  </header>
+
+  <div class="error-banner" id="errorBanner"></div>
+
+  <div class="views-hint">AI panels load here…</div>
+
+  <div class="panel">
+    <div class="panel-controls">
+      <div class="section">
+        <button id="toggleBridge">🔗 Start Bridge</button>
+      </div>
+      <div class="section">
+        <h3>Manual Forward</h3>
+        <div class="btn-row">
+          <button id="forwardClaude" class="secondary">Claude ➡ DS</button>
+          <button id="forwardDeepseek" class="secondary">DS ➡ Claude</button>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Settings</h3>
+        <div class="setting-row">
+          <label for="turnDelay">Turn delay (s)</label>
+          <input type="number" id="turnDelay" min="0" max="120" value="3">
+        </div>
+        <div class="setting-row">
+          <label for="maxTurns">Max turns (0 = ∞)</label>
+          <input type="number" id="maxTurns" min="0" max="999" value="0">
+        </div>
+        <div class="setting-row">
+          <label for="labelMessages">Label senders</label>
+          <input type="checkbox" id="labelMessages" checked>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Log</h3>
+        <div class="btn-row">
+          <button id="shareLog" class="secondary">📤 Share</button>
+          <button id="debugSnapshot" class="secondary">🔧 Snapshot</button>
+        </div>
+        <div class="btn-row">
+          <button id="exportJson" class="secondary">JSON</button>
+          <button id="exportMd" class="secondary">MD</button>
+          <button id="clearLog" class="danger">🗑️</button>
+        </div>
+        <div class="setting-row" style="justify-content:flex-end"><span id="messageCount" style="font-size:11px;color:#666">0 messages</span></div>
+      </div>
+    </div>
+    <div class="stream" id="stream">
+      <div class="empty-hint">No messages yet.<br>Log in to both panels, then Start Bridge.</div>
+    </div>
+  </div>
+
+  <footer>
+    <textarea id="userInput" placeholder='Interject as [Human]… ("stop" pauses the bridge, "resume" restarts it)'></textarea>
+    <select id="interjectTarget" title="Who receives the interject. One side is recommended — the other AI hears it through the relay.">
+      <option value="Claude">→ Claude</option>
+      <option value="DeepSeek">→ DeepSeek</option>
+      <option value="Both">→ Both</option>
+    </select>
+    <button id="sendUserMessage">Send</button>
+  </footer>
+
+  <script src="console.js"></script>
+</body>
+</html>

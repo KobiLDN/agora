@@ -1,0 +1,14 @@
+{
+  "name": "agora-app",
+  "version": "0.1.0",
+  "description": "Agora — moderated AI-to-AI conversations in one desktop window",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "KobiLDN",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}

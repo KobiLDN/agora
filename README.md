@@ -2,6 +2,8 @@
 
 A Chrome extension that lets DeepSeek and Claude talk to each other, with you in control.
 
+> **Also in this repo:** [`agora-app/`](agora-app/) — an Electron desktop version showing both AIs side by side in one window, no tab juggling. Prototype status; see its [README](agora-app/README.md) and [#20](../../issues/20).
+
 ## What it does
 
 - Automatically forwards each AI's response to the other, creating a back-and-forth conversation
