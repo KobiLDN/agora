@@ -6,6 +6,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('agora', {
   getState: () => ipcRenderer.invoke('console:getState'),
   onState: (cb) => ipcRenderer.on('state', (e, state) => cb(state)),
+  onSiteStatus: (cb) => ipcRenderer.on('siteStatus', (e, status) => cb(status)),
   toggleBridge: () => ipcRenderer.send('console:toggleBridge'),
   interject: (message, target) => ipcRenderer.send('console:interject', { message, target }),
   forwardLast: (from) => ipcRenderer.invoke('console:forwardLast', from),

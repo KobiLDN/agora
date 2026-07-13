@@ -5,6 +5,10 @@ let latestState = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
   window.agora.onState(render);
+  window.agora.onSiteStatus(({ name, ready }) => {
+    const dot = document.getElementById(name === 'DeepSeek' ? 'dotDeepSeek' : 'dotClaude');
+    if (dot) dot.classList.toggle('online', ready);
+  });
   render(await window.agora.getState());
 
   document.getElementById('toggleBridge').addEventListener('click', () => window.agora.toggleBridge());

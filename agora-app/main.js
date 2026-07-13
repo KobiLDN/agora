@@ -78,6 +78,11 @@ function createSiteViews() {
     view.webContents.setUserAgent(cleanUserAgent(view.webContents.getUserAgent()));
     view.webContents.loadURL(cfg.url);
 
+    // drive the header status dot: green once loaded, red while (re)loading
+    view.webContents.on('did-finish-load', () => sendSiteStatus(name, true));
+    view.webContents.on('did-start-loading', () => sendSiteStatus(name, false));
+    view.webContents.on('did-fail-load', () => sendSiteStatus(name, false));
+
     // external links (docs, OAuth-to-browser, etc.) open in the real browser
     view.webContents.setWindowOpenHandler(({ url }) => {
       shell.openExternal(url);
@@ -85,6 +90,12 @@ function createSiteViews() {
     });
 
     views[name] = view;
+  }
+}
+
+function sendSiteStatus(name, ready) {
+  if (win && !win.webContents.isDestroyed()) {
+    win.webContents.send('siteStatus', { name, ready });
   }
 }
 
