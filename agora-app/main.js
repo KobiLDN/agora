@@ -26,6 +26,9 @@ const LOG_W = 360;
 let win = null;
 const views = {};
 let store = null;
+// remembered so the renderer can be told current status when it (re)loads,
+// not only via the live event it might miss during startup
+const siteReady = { DeepSeek: false, Claude: false };
 
 // A plain-Chrome user-agent. Electron's default UA advertises "Electron/x"
 // and the app name, which sites (DeepSeek notably) scan for and block as an
@@ -78,8 +81,11 @@ function createSiteViews() {
     view.webContents.setUserAgent(cleanUserAgent(view.webContents.getUserAgent()));
     view.webContents.loadURL(cfg.url);
 
-    // drive the header status dot: green once loaded, red while (re)loading
+    // drive the header status dot: green once loaded, red while (re)loading.
+    // did-stop-loading is the reliable "done" signal for SPAs like Claude
+    // that keep doing internal navigations after the first did-finish-load.
     view.webContents.on('did-finish-load', () => sendSiteStatus(name, true));
+    view.webContents.on('did-stop-loading', () => sendSiteStatus(name, true));
     view.webContents.on('did-start-loading', () => sendSiteStatus(name, false));
     view.webContents.on('did-fail-load', () => sendSiteStatus(name, false));
 
@@ -94,8 +100,19 @@ function createSiteViews() {
 }
 
 function sendSiteStatus(name, ready) {
+  siteReady[name] = ready;
   if (win && !win.webContents.isDestroyed()) {
     win.webContents.send('siteStatus', { name, ready });
+  }
+}
+
+// Re-emit both panels' current status — called when the console UI (re)loads,
+// so it never depends on having caught the live event during startup
+function resendAllSiteStatus() {
+  for (const [name, ready] of Object.entries(siteReady)) {
+    if (win && !win.webContents.isDestroyed()) {
+      win.webContents.send('siteStatus', { name, ready });
+    }
   }
 }
 
@@ -177,7 +194,10 @@ app.whenReady().then(() => {
 
   new Bridge(store, sendToSite, otherSite);
   store.onChange(pushState);
-  win.webContents.on('did-finish-load', pushState);
+  win.webContents.on('did-finish-load', () => {
+    pushState();
+    resendAllSiteStatus();
+  });
   wireConsoleIpc();
 
   win.on('closed', () => {
