@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.0 — 2026-07-13
+
+Two new form factors beyond the Chrome extension, both sharing the extension's battle-tested DOM logic.
+
+### Added
+- **Desktop app** (`agora-app/`, Electron, #20) — DeepSeek and Claude as live side-by-side panels in one window, no tab-juggling. `WebContentsView` panels aren't iframes, so `X-Frame-Options` doesn't block them. Relay logic ported minus every MV3 workaround (no service-worker death, no alarms backstop). Validated working on Windows.
+- **Android app** (`agora-android/`, Kotlin + WebViews, #21) — the bridge on a phone. Relay ported to Kotlin, `content.js` DOM logic to an injected JS asset. APK built in CI (`.github/workflows/android.yml`) and published to the `android-latest` release for direct phone download — no Android Studio needed.
+
+### Fixed (desktop)
+- **DeepSeek "Abnormal usage environment"** — Electron's default UA advertises `Electron/x` + app name, which DeepSeek's anti-automation flags. `cleanUserAgent()` strips those so each panel presents as plain Chrome.
+- **Header status dots stuck red** — now reflect each panel's actual load state (green when loaded), with the state re-sent on UI load to avoid a startup race.
+- **Stale history forwarded on Start Bridge** (#22) — clearing the log doesn't clear the panels' on-screen chat history; the observer could grab a pre-existing message and forward it. Start Bridge now re-baselines both panels so only messages appearing after Start get relayed.
+
 ## v1.3 — 2026-07-09
 
 Hardening from extended live testing — a multi-hour bridged conversation where the AIs themselves helped diagnose the bugs (the service-worker issue was spotted by the bridged Claude chat reading the code).
