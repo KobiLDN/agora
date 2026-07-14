@@ -15,6 +15,11 @@ ipcRenderer.on('site:inject', (e, text) => injectMessage(text));
 ipcRenderer.on('site:debugSnapshot', (e, reqId) => {
   ipcRenderer.send(`site:debugSnapshot:${reqId}`, buildDebugSnapshot());
 });
+// Fired when the bridge is (re)started: treat everything currently on the
+// page as already-seen so pre-existing chat history isn't captured and
+// forwarded as if it were new. Runs twice because a site's SPA can finish
+// rendering its history a beat after the event arrives.
+ipcRenderer.on('site:rebaseline', () => rebaseline());
 
 function normalize(t) {
   return (t || '').replace(/\s+/g, ' ').trim();
@@ -229,6 +234,17 @@ function waitForStableText(el, callback, maxWaitMs = 180000) {
       callback(getMessageText(el));
     }
   }, 750);
+}
+
+// Mark every message currently on the page as seen, so nothing already
+// present gets forwarded. Runs at t=0 and again shortly after, to catch
+// history the SPA renders slightly late.
+function rebaseline() {
+  const mark = () => getMessageNodes().forEach(n => {
+    if (!n.dataset.agoraSeen) n.dataset.agoraSeen = 'baseline';
+  });
+  mark();
+  setTimeout(mark, 1500);
 }
 
 function observeResponses() {

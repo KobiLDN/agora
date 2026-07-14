@@ -194,6 +194,21 @@ app.whenReady().then(() => {
 
   new Bridge(store, sendToSite, otherSite);
   store.onChange(pushState);
+
+  // When the bridge flips OFF→ON, tell both panels to treat their current
+  // on-screen history as already-seen, so pre-existing chat isn't captured
+  // and forwarded as if it were new.
+  let prevBridgeActive = store.get().bridgeActive;
+  store.onChange((state) => {
+    if (state.bridgeActive && !prevBridgeActive) {
+      for (const view of Object.values(views)) {
+        if (view && !view.webContents.isDestroyed()) {
+          view.webContents.send('site:rebaseline');
+        }
+      }
+    }
+    prevBridgeActive = state.bridgeActive;
+  });
   win.webContents.on('did-finish-load', () => {
     pushState();
     resendAllSiteStatus();
