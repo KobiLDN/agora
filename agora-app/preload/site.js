@@ -244,6 +244,15 @@ function waitForStableText(el, callback, maxWaitMs = 180000) {
   }, 750);
 }
 
+// Short status labels some sites render in the reply slot before the actual
+// answer (Claude briefly shows "Thinking"). A capture of only this text is
+// not a reply and must not be forwarded.
+const PLACEHOLDER_RE = /^(thinking|thought for [\w\s.]+|searching[\w\s]*|reasoning|analyzing|generating|loading|working)\W*$/i;
+function isPlaceholderText(text) {
+  const t = normalize(text);
+  return t.length < 40 && PLACEHOLDER_RE.test(t);
+}
+
 // Mark every message currently on the page as seen, so nothing already
 // present gets forwarded. Runs at t=0 and again shortly after, to catch
 // history the SPA renders slightly late.
@@ -281,6 +290,10 @@ function observeResponses() {
           el.dataset.agoraSeen = 'empty';
           return;
         }
+        // Status placeholders ("Thinking", "Searching the web…") that a site
+        // shows before the real answer: leave the node unseen so the next
+        // mutation re-checks it once the actual reply has rendered.
+        if (isPlaceholderText(finalText)) return;
         if (isEchoOfInjected(finalText)) {
           el.dataset.agoraSeen = 'echo';
           return;
