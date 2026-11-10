@@ -12,7 +12,8 @@ const DEFAULTS = {
   settings: { turnDelay: 3, maxTurns: 0, labelMessages: true, interjectTarget: 'Claude' },
   turnCount: 0,
   introSentTo: { DeepSeek: false, Claude: false },
-  lastStop: null
+  lastStop: null,
+  briefed: false
 };
 
 class Store {

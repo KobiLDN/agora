@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('agora', {
   onState: (cb) => ipcRenderer.on('state', (e, state) => cb(state)),
   onSiteStatus: (cb) => ipcRenderer.on('siteStatus', (e, status) => cb(status)),
   toggleBridge: () => ipcRenderer.send('console:toggleBridge'),
+  briefAIs: () => ipcRenderer.invoke('console:briefAIs'),
   interject: (message, target) => ipcRenderer.send('console:interject', { message, target }),
   forwardLast: (from) => ipcRenderer.invoke('console:forwardLast', from),
   shareLog: (target) => ipcRenderer.invoke('console:shareLog', target),

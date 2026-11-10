@@ -12,6 +12,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   render(await window.agora.getState());
 
   document.getElementById('toggleBridge').addEventListener('click', () => window.agora.toggleBridge());
+  document.getElementById('briefAIs').addEventListener('click', async () => {
+    const result = await window.agora.briefAIs();
+    if (result && !result.success) showError(result.error);
+  });
   document.getElementById('forwardClaude').addEventListener('click', () => forwardLast('Claude'));
   document.getElementById('forwardDeepseek').addEventListener('click', () => forwardLast('DeepSeek'));
   document.getElementById('shareLog').addEventListener('click', shareLog);
@@ -46,6 +50,8 @@ function render(state) {
   const status = document.getElementById('bridgeStatus');
   const counter = document.getElementById('turnCounter');
   const s = state.settings || {};
+
+  document.getElementById('briefAIs').disabled = !!state.bridgeActive;
 
   if (state.bridgeActive) {
     btn.textContent = '⏹️ Stop Bridge';

@@ -51,14 +51,17 @@ class Bridge {
     });
 
     ipcMain.on('console:toggleBridge', () => {
-      const { bridgeActive } = this.store.get();
+      const { bridgeActive, briefed } = this.store.get();
       this.store.set({
         bridgeActive: !bridgeActive,
         turnCount: 0,
-        introSentTo: { DeepSeek: false, Claude: false },
+        // already briefed via the Brief button → skip the shorter auto-notice
+        introSentTo: { DeepSeek: !!briefed, Claude: !!briefed },
         lastStop: null
       });
     });
+
+    ipcMain.handle('console:briefAIs', () => this.briefAIs());
 
     ipcMain.on('console:interject', (e, { message, target }) => {
       this.handleUserMessage(message, target);
@@ -72,8 +75,43 @@ class Bridge {
     });
 
     ipcMain.on('console:clearLog', () => {
-      this.store.set({ conversationLog: [], turnCount: 0 });
+      // a cleared log means a fresh session — assume the AIs need briefing again
+      this.store.set({ conversationLog: [], turnCount: 0, briefed: false });
     });
+  }
+
+  // Tell each AI what Agora is, who it is, and who it's talking to. Sent
+  // only while the bridge is off: both AIs reply at once, and with the bridge
+  // on those replies would be relayed to each other as two tangled threads.
+  briefAIs() {
+    if (this.store.get().bridgeActive) {
+      return { success: false, error: 'Stop the bridge first — briefing is sent before a conversation starts.' };
+    }
+
+    const delivered = [];
+    for (const name of ['DeepSeek', 'Claude']) {
+      const other = this.otherSite(name);
+      const text =
+        `[Agora setup] You are ${name}. You're about to take part in Agora, an app that connects ` +
+        `you to another AI, ${other}, in a conversation moderated by a human.\n\n` +
+        `How it works:\n` +
+        `- Each of your replies is automatically passed to ${other}, and ${other}'s replies come back to you.\n` +
+        `- Messages starting [${other}]: are written by ${other}, not a human. Messages starting [Human]: are from the moderator.\n` +
+        `- Talk to ${other} directly. Be honest and disagree when you genuinely disagree — don't just be polite.\n` +
+        `- Keep replies under 200 words unless asked otherwise.\n` +
+        `- When you and ${other} have both reached a genuine conclusion, end your message with ${STOP_TOKEN} ` +
+        `as the very last thing, nothing after it. When both of you do that, the conversation ends automatically. ` +
+        `Only mentioning the token mid-message does nothing.\n\n` +
+        `For now, just reply "Ready". The moderator will send the topic next.`;
+      if (this.sendToSite(name, text)) delivered.push(name);
+    }
+
+    if (!delivered.length) {
+      return { success: false, error: 'Neither panel is ready — wait for both to finish loading.' };
+    }
+    this.store.set({ briefed: true });
+    this.store.addLogEntry('System', `Briefed ${delivered.join(' and ')} on how Agora works.`);
+    return { success: true };
   }
 
   labelText(from, target, text) {

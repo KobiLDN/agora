@@ -195,6 +195,7 @@
       font-family: inherit;
     }
     button:hover { background: #5f7ff7; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
     button.secondary { background: #2c2c2c; }
     button.secondary:hover { background: #3a3a3a; }
     button.danger, #toggleBridge.active { background: #dc3545; }
@@ -253,6 +254,7 @@
     <div class="panel-controls">
       <div class="section">
         <button id="toggleBridge">🔗 Start Bridge</button>
+        <button id="briefAIs" class="secondary" title="Tell both AIs what Agora is, who they are, and who they're talking to. Use before Start Bridge, once per new chat.">📣 Brief AIs</button>
       </div>
       <div class="section">
         <h3>Manual Forward</h3>
