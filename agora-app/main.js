@@ -78,7 +78,9 @@ function createSiteViews() {
       }
     });
     win.contentView.addChildView(view);
-    view.webContents.setUserAgent(cleanUserAgent(view.webContents.getUserAgent()));
+    const normalUA = cleanUserAgent(view.webContents.getUserAgent());
+    view.webContents.setUserAgent(normalUA);
+    enableGoogleSignIn(view, normalUA);
     view.webContents.loadURL(cfg.url);
 
     // drive the header status dot: green once loaded, red while (re)loading.
@@ -97,6 +99,50 @@ function createSiteViews() {
 
     views[name] = view;
   }
+}
+
+// Google refuses sign-in from embedded Chromium ("This browser or app may not
+// be secure") — it checks the UA, the Sec-CH-UA client-hint headers, and
+// navigator.userAgentData, all of which betray Electron's Chromium build.
+// Multi-account wrappers (Ferdium, Rambox) work around this by presenting a
+// Firefox identity on Google's auth pages only; Firefox sends no client hints
+// and has no userAgentData, so the checks have nothing to object to.
+const FIREFOX_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0';
+const GOOGLE_AUTH_HOSTS = ['accounts.google.com', 'accounts.youtube.com'];
+
+function isGoogleAuth(url) {
+  try {
+    return GOOGLE_AUTH_HOSTS.includes(new URL(url).hostname);
+  } catch (e) {
+    return false;
+  }
+}
+
+function enableGoogleSignIn(view, normalUA) {
+  const wc = view.webContents;
+
+  // request headers for Google auth pages: Firefox UA, no Chromium client hints
+  wc.session.webRequest.onBeforeSendHeaders(
+    { urls: GOOGLE_AUTH_HOSTS.map(h => `https://${h}/*`) },
+    (details, callback) => {
+      const headers = details.requestHeaders;
+      headers['User-Agent'] = FIREFOX_UA;
+      for (const key of Object.keys(headers)) {
+        if (key.toLowerCase().startsWith('sec-ch-ua')) delete headers[key];
+      }
+      callback({ requestHeaders: headers });
+    }
+  );
+
+  // navigator.userAgent for the page itself: swap while on Google auth,
+  // restore when the flow redirects back to DeepSeek/Claude
+  wc.on('did-start-navigation', (event, legacyUrl, isInPlace, legacyIsMainFrame) => {
+    const url = event.url ?? legacyUrl;
+    const isMainFrame = event.isMainFrame ?? legacyIsMainFrame;
+    if (!isMainFrame || !url) return;
+    const wanted = isGoogleAuth(url) ? FIREFOX_UA : normalUA;
+    if (wc.getUserAgent() !== wanted) wc.setUserAgent(wanted);
+  });
 }
 
 function sendSiteStatus(name, ready) {

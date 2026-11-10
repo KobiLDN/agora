@@ -5,7 +5,15 @@
 // structural text extraction. See the extension's issue history (#9-#11,
 // #18) for why each piece exists.
 
-const { ipcRenderer } = require('electron');
+const { ipcRenderer, webFrame } = require('electron');
+
+// On Google's sign-in pages, finish the Firefox disguise main.js starts:
+// Firefox has no navigator.userAgentData, and Google's page script checks it.
+if (['accounts.google.com', 'accounts.youtube.com'].includes(location.hostname)) {
+  webFrame.executeJavaScript(
+    "try { Object.defineProperty(Navigator.prototype, 'userAgentData', { get: () => undefined, configurable: true }); } catch (e) {}"
+  );
+}
 
 const SITE = (process.argv.find(a => a.startsWith('--agora-site=')) || '').split('=')[1] || 'unknown';
 const isDeepSeek = SITE === 'DeepSeek';
