@@ -171,8 +171,12 @@ function pushState() {
 function wireConsoleIpc() {
   ipcMain.handle('console:getState', () => store.get());
 
+  // ⟳ goes back to the site's home page rather than reloading the current
+  // URL — otherwise a panel stuck on a third-party page (e.g. Google's
+  // "Couldn't sign you in") just reloads the dead end forever
   ipcMain.on('console:reloadSite', (e, name) => {
-    views[name]?.webContents.reload();
+    const view = views[name];
+    if (view && SITES[name]) view.webContents.loadURL(SITES[name].url);
   });
 
   ipcMain.on('console:devtoolsSite', (e, name) => {
