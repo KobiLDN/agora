@@ -66,8 +66,9 @@ function getMessageText(el) {
     'button', 'svg', '[aria-hidden="true"]',
     '[class*="sr-only"]', '[class*="screenreader"]',
     'details', 'summary',
-    '[class*="thinking"]', '[class*="thought"]',
-    '[data-testid*="thinking"]', '[data-testid*="thought"]'
+    // reasoning blocks: "thinking" (Claude), "ds-think…" (DeepSeek Deep-Thinking)
+    '[class*="think"]', '[class*="thought"]', '[class*="reasoning"]',
+    '[data-testid*="think"]', '[data-testid*="thought"]'
   ].join(',')).forEach(n => n.remove());
 
   const proseSelector = 'p, li, pre, blockquote, h1, h2, h3, h4';

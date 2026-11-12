@@ -9,6 +9,12 @@ const { ipcMain } = require('electron');
 const STOP_TOKEN = '[STOP_BRIDGE]';
 const STOP_WINDOW_MS = 3 * 60 * 1000;
 const DEDUPE_WINDOW_MS = 60 * 1000;
+const NEAR_DUP_WINDOW_MS = 5 * 1000;
+const ONE_SIDED_STOP_MAX_CHARS = 400;
+
+function norm(t) {
+  return (t || '').replace(/\s+/g, ' ').trim();
+}
 const SHARE_LOG_MAX_CHARS = 15000;
 
 const PAUSE_WORDS = ['stop', 'pause', 'halt'];
@@ -154,14 +160,39 @@ class Bridge {
   handleNewMessage(sender, message) {
     // Dedupe: the observer can capture the same message from two DOM nodes
     const cutoff = Date.now() - DEDUPE_WINDOW_MS;
-    const isDuplicate = this.store.get().conversationLog.some(e =>
+    const log = this.store.get().conversationLog;
+    const isDuplicate = log.some(e =>
       e.sender === sender && e.timestamp > cutoff && e.message === message
     );
     if (isDuplicate) return;
 
+    // Near-duplicate: the same reply captured twice from nested page elements,
+    // once clean and once with the AI's hidden reasoning prepended (seen live
+    // with DeepSeek Deep-Thinking, in either order, ~0.3s apart). Keep the
+    // shorter, clean version — swapping it into the log and into the
+    // not-yet-sent forward if the longer one arrived first.
+    const recent = [...log].reverse().find(e =>
+      e.sender === sender && Date.now() - e.timestamp < NEAR_DUP_WINDOW_MS
+    );
+    if (recent) {
+      const a = norm(recent.message);
+      const b = norm(message);
+      if (a.includes(b) || b.includes(a)) {
+        if (b.length < a.length) {
+          recent.message = message;
+          this.store.set({ conversationLog: log });
+          if (this.pendingForward && this.pendingForward.sender === sender) {
+            this.pendingForward.message = message;
+          }
+        }
+        return;
+      }
+    }
+
     this.store.addLogEntry(sender, message);
 
     if (this.checkMutualStop(sender, message)) return;
+    if (this.checkOneSidedStop(sender, message)) return;
 
     const state = this.store.get();
     if (!state.bridgeActive) return;
@@ -173,7 +204,41 @@ class Bridge {
     }
 
     const delayMs = (state.settings.turnDelay || 0) * 1000;
-    setTimeout(() => this.forwardMessage(sender, message), delayMs);
+    const pending = { sender, message };
+    this.pendingForward = pending;
+    setTimeout(() => {
+      if (this.pendingForward === pending) this.pendingForward = null;
+      this.forwardMessage(pending.sender, pending.message);
+    }, delayMs);
+  }
+
+  // Fallback for when only one AI uses the stop token (seen live: DeepSeek
+  // signalled [STOP_BRIDGE] eight times while Claude kept saying "we're done"
+  // in plain words). If the same AI signals stop on two of its turns in a row
+  // and the other AI's replies in between were just short acknowledgments,
+  // the conversation is over — stop instead of looping until the human steps in.
+  checkOneSidedStop(sender, message) {
+    if (!endsWithStopToken(message) || !this.store.get().bridgeActive) return false;
+    const log = this.store.get().conversationLog;
+    const between = [];
+    for (let i = log.length - 2; i >= 0; i--) {
+      const e = log[i];
+      if (e.sender === sender) {
+        if (!endsWithStopToken(e.message)) return false;
+        const otherText = between.join(' ');
+        if (between.length && otherText.length < ONE_SIDED_STOP_MAX_CHARS) {
+          const other = this.otherSite(sender);
+          this.store.set({ bridgeActive: false, lastStop: null });
+          this.store.addLogEntry('System',
+            `Bridge stopped — ${sender} signalled it was done twice and ${other} had nothing new to add.`);
+          return true;
+        }
+        return false;
+      }
+      if (e.sender === 'User' || e.sender === 'System') return false;
+      between.push(e.message);
+    }
+    return false;
   }
 
   forwardMessage(sender, message) {
