@@ -8,7 +8,7 @@
 // can show live panels where the extension's console (#16) could only show
 // a captured log.
 
-const { app, BrowserWindow, WebContentsView, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, shell, Menu } = require('electron');
 const path = require('path');
 const { Store } = require('./lib/store');
 const { Bridge } = require('./lib/bridge');
@@ -220,7 +220,56 @@ function wireConsoleIpc() {
   });
 }
 
+// Replace Electron's default menu, whose Help → Documentation opens
+// Electron's own developer docs, with one whose Help opens the Agora guide.
+let helpWin = null;
+function openHelp() {
+  if (helpWin && !helpWin.isDestroyed()) {
+    helpWin.focus();
+    return;
+  }
+  helpWin = new BrowserWindow({
+    width: 1000,
+    height: 760,
+    title: 'Agora Guide',
+    backgroundColor: '#141414',
+    autoHideMenuBar: true,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
+  });
+  helpWin.loadFile(path.join(__dirname, 'ui', 'help.html'));
+  // links in the guide (GitHub) open in the normal browser
+  helpWin.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  helpWin.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith('file:')) {
+      e.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+}
+
+function buildMenu() {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { role: 'fileMenu' },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+    {
+      role: 'help',
+      submenu: [
+        { label: 'Agora Guide', accelerator: 'F1', click: openHelp },
+        { type: 'separator' },
+        { label: 'Report a Problem', click: () => shell.openExternal('https://github.com/KobiLDN/agora/issues') },
+        { label: 'Project Page', click: () => shell.openExternal('https://github.com/KobiLDN/agora') }
+      ]
+    }
+  ]));
+}
+
 app.whenReady().then(() => {
+  buildMenu();
   store = new Store(app.getPath('userData'));
 
   win = new BrowserWindow({
@@ -266,6 +315,7 @@ app.whenReady().then(() => {
   wireConsoleIpc();
 
   win.on('closed', () => {
+    if (helpWin && !helpWin.isDestroyed()) helpWin.close();
     store.flush();
     win = null;
   });

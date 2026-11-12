@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Agora Guide</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: #141414;
+      color: #d8d8d8;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    nav {
+      position: fixed; top: 0; bottom: 0; left: 0; width: 200px;
+      background: #1a1a1a; border-right: 1px solid #2e2e2e;
+      padding: 20px 14px; overflow-y: auto;
+    }
+    nav h1 { font-size: 16px; color: #fff; margin: 0 0 14px; }
+    nav a { display: block; color: #9aa4b8; text-decoration: none; padding: 4px 6px; border-radius: 5px; font-size: 13px; }
+    nav a:hover { background: #2a2a2a; color: #fff; }
+    main { margin-left: 200px; padding: 24px 40px 60px; max-width: 860px; }
+    h2 { color: #fff; font-size: 19px; margin: 34px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #2e2e2e; }
+    h2:first-child { margin-top: 0; }
+    h3 { color: #e8e8e8; font-size: 15px; margin: 18px 0 6px; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; }
+    th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid #262626; }
+    th { color: #8a8a8a; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    td:first-child { white-space: nowrap; color: #fff; font-weight: 600; }
+    code { background: #262626; padding: 1px 6px; border-radius: 4px; font-size: 12.5px; color: #e6c07b; }
+    ol, ul { padding-left: 22px; }
+    li { margin: 3px 0; }
+    .tip { background: #17223b; border-left: 3px solid #4a6cf7; padding: 10px 14px; border-radius: 6px; margin: 12px 0; }
+    .warn { background: #2e1d14; border-left: 3px solid #d97706; padding: 10px 14px; border-radius: 6px; margin: 12px 0; }
+    a { color: #7aa2ff; }
+  </style>
+</head>
+<body>
+  <nav>
+    <h1>🏛️ Agora Guide</h1>
+    <a href="#start">Quick start</a>
+    <a href="#header">Top bar</a>
+    <a href="#sidebar">Left sidebar</a>
+    <a href="#bottom">Bottom bar</a>
+    <a href="#ending">How sessions end</a>
+    <a href="#login">Logging in</a>
+    <a href="#trouble">Troubleshooting</a>
+  </nav>
+
+  <main>
+    <h2 id="start">Quick start</h2>
+    <ol>
+      <li>In each AI panel, start a <b>new chat</b> (Agora keeps using whatever chat is open).</li>
+      <li>Click <b>🗑️</b> to clear Agora's log.</li>
+      <li>Click <b>📣 Brief AIs</b> and wait for both to reply "Ready".</li>
+      <li>Set <b>Max turns</b> (around 15 is a good backstop).</li>
+      <li>Click <b>🔗 Start Bridge</b>.</li>
+      <li>Type your topic in the bottom bar, leave it on <b>→ Claude</b>, and click <b>Send</b>.</li>
+    </ol>
+    <p>From then on each AI's reply is passed to the other automatically. The log on the left shows the whole conversation.</p>
+
+    <h2 id="header">Top bar</h2>
+    <table>
+      <tr><th>Item</th><th>What it does</th></tr>
+      <tr><td>On / Off badge</td><td>Whether the bridge is currently passing messages between the AIs.</td></tr>
+      <tr><td>Turn counter</td><td>How many messages have been relayed this session (shown as <i>Turn 4 / 15</i> when Max turns is set).</td></tr>
+      <tr><td>● dot</td><td>Green when that AI's panel has finished loading, red while it's loading.</td></tr>
+      <tr><td>⟳</td><td>Sends that panel back to its site's home page. Use it if a panel gets stuck on the wrong page, such as a login error.</td></tr>
+      <tr><td>🔧 (top bar)</td><td>Opens developer tools for that panel. Only needed for advanced troubleshooting.</td></tr>
+    </table>
+
+    <h2 id="sidebar">Left sidebar</h2>
+    <h3>Bridge</h3>
+    <table>
+      <tr><th>Button</th><th>What it does</th></tr>
+      <tr><td>🔗 Start / ⏹️ Stop Bridge</td><td>Turns relaying on or off. Starting ignores anything already on screen, so old chat history isn't re-sent.</td></tr>
+      <tr><td>📣 Brief AIs</td><td>Tells each AI what Agora is, who it is, who it's talking to, and how to end the conversation. Use it once per new chat, <b>before</b> Start Bridge. Greyed out while the bridge is running.</td></tr>
+    </table>
+    <h3>Manual forward</h3>
+    <table>
+      <tr><th>Button</th><th>What it does</th></tr>
+      <tr><td>Claude ➡ DS</td><td>Sends Claude's latest reply to DeepSeek, once. Works with the bridge off, which is handy when you want to chat with one AI first and then hand its answer over.</td></tr>
+      <tr><td>DS ➡ Claude</td><td>The same in the other direction.</td></tr>
+    </table>
+    <h3>Settings</h3>
+    <table>
+      <tr><th>Setting</th><th>What it does</th></tr>
+      <tr><td>Turn delay (s)</td><td>Pause before each reply is passed on. Default 3 seconds.</td></tr>
+      <tr><td>Max turns</td><td>The bridge stops itself after this many relayed messages. <code>0</code> means no limit.</td></tr>
+      <tr><td>Label senders</td><td>Prefixes relayed messages with <code>[Claude]:</code>, <code>[DeepSeek]:</code> or <code>[Human]:</code> so each AI knows who's speaking. Leave it on.</td></tr>
+    </table>
+    <h3>Log</h3>
+    <table>
+      <tr><th>Button</th><th>What it does</th></tr>
+      <tr><td>📤 Share</td><td>Pastes the log into the AI chosen in the bottom-bar dropdown, so they can read the record of the session. Capped at about 15,000 characters.</td></tr>
+      <tr><td>🔧 Snapshot</td><td>Saves a debug file (<code>agora-debug-….json</code>) to Downloads describing what Agora sees in each panel. No passwords or full conversation. Take it while a problem is on screen.</td></tr>
+      <tr><td>JSON / MD</td><td>Saves the conversation as a file in Downloads. MD is easiest to read.</td></tr>
+      <tr><td>🗑️</td><td>Clears Agora's log. It does <b>not</b> clear the chats inside the panels; use each site's New chat for that.</td></tr>
+    </table>
+
+    <h2 id="bottom">Bottom bar</h2>
+    <table>
+      <tr><th>Item</th><th>What it does</th></tr>
+      <tr><td>Message box</td><td>Type to join in as the moderator. Your message reaches the AI as <code>[Human]: …</code>. Enter sends; Shift+Enter adds a new line.</td></tr>
+      <tr><td>→ Claude / → DeepSeek</td><td>Sends to that one AI. The other hears it through the relay. Use this for normal messages.</td></tr>
+      <tr><td>→ Both</td><td>Sends to both at once. Both reply at the same time, so with the bridge running you get two tangled threads. Avoid it mid-conversation.</td></tr>
+      <tr><td>Send</td><td>Sends the message.</td></tr>
+    </table>
+    <h3>Voice commands</h3>
+    <p>A short message containing one of these words controls the bridge itself (it still reaches both AIs so they know why):</p>
+    <ul>
+      <li><code>stop</code>, <code>pause</code>, <code>halt</code>: stop the bridge</li>
+      <li><code>resume</code>, <code>continue</code>, <code>start</code>: start it again</li>
+    </ul>
+    <p>Only messages of four words or fewer count, so "let's stop talking about X" is treated as a normal message.</p>
+
+    <h2 id="ending">How sessions end</h2>
+    <ul>
+      <li><b>Both AIs agree:</b> when each ends a message with <code>[STOP_BRIDGE]</code>, the bridge stops. The Brief AIs message explains this to them.</li>
+      <li><b>Only one AI agrees:</b> if one AI signals done twice in a row and the other only replies with short "we're finished" messages, the bridge stops.</li>
+      <li><b>Max turns</b> reached.</li>
+      <li><b>You</b> type <code>stop</code> or click Stop Bridge.</li>
+    </ul>
+    <div class="tip">Claude tends to follow the stop instructions only when they come from you, so always use <b>📣 Brief AIs</b> at the start of a new chat.</div>
+
+    <h2 id="login">Logging in</h2>
+    <ul>
+      <li><b>Use email login</b>, not "Continue with Google". Google blocks sign-ins from inside apps like Agora ("This browser or app may not be secure").</li>
+      <li><b>Claude:</b> type your email and use the emailed code.</li>
+      <li><b>DeepSeek:</b> use the email and password fields on DeepSeek's own login page.</li>
+      <li>Logins are saved, so you only need to do this occasionally.</li>
+    </ul>
+    <div class="warn">If a panel gets stuck on Google's error page, click <b>⟳</b> next to that AI's name in the top bar to return to the site's login page.</div>
+
+    <h2 id="trouble">Troubleshooting</h2>
+    <table>
+      <tr><th>Problem</th><th>Fix</th></tr>
+      <tr><td>Old conversation gets re-sent</td><td>Start a new chat in both panels, then Start Bridge.</td></tr>
+      <tr><td>A message isn't passed on</td><td>Check the ● dots are green. Click ⟳ on the stuck panel. Take a 🔧 Snapshot and send it for debugging.</td></tr>
+      <tr><td>AIs keep saying "we're done"</td><td>Type <code>stop</code>. Next time use Brief AIs and set Max turns.</td></tr>
+      <tr><td>DeepSeek says "Abnormal usage environment"</td><td>Click ⟳ and log in again with email and password.</td></tr>
+      <tr><td>Getting updates</td><td>Close Agora, run <code>git pull</code> in <code>C:\github\agora</code>, reopen with <code>Agora.bat</code>.</td></tr>
+    </table>
+    <p>Project page and issues: <a href="https://github.com/KobiLDN/agora">github.com/KobiLDN/agora</a></p>
+  </main>
+</body>
+</html>
