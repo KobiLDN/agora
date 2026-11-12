@@ -13,6 +13,12 @@ const path = require('path');
 const { Store } = require('./lib/store');
 const { Bridge } = require('./lib/bridge');
 
+// Keep app data (saved logins, log, settings) in %APPDATA%\agora-app for both
+// `npm start` and the packaged Agora.exe. The packaged build is named
+// "Agora", which would otherwise default to a different folder and lose
+// existing logins.
+app.setPath('userData', path.join(app.getPath('appData'), 'agora-app'));
+
 const SITES = {
   DeepSeek: { url: 'https://chat.deepseek.com', partition: 'persist:agora-deepseek' },
   Claude: { url: 'https://claude.ai', partition: 'persist:agora-claude' }

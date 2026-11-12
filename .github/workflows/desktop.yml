@@ -1,0 +1,63 @@
+name: Build Desktop App
+
+# Builds the Agora desktop app (agora-app/) on a Windows runner and publishes
+# it to the "desktop-latest" prerelease, so there's a stable download link:
+#   Agora-Setup.exe  — installer with Start menu + desktop shortcuts
+#   Agora.exe        — portable single file, no install
+# No Node or terminal needed on the user's machine.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - main
+    paths:
+      - 'agora-app/**'
+      - '.github/workflows/desktop.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: agora-app
+        run: npm install
+
+      - name: Build Windows installer and portable exe
+        working-directory: agora-app
+        run: npm run dist
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agora-windows
+          path: |
+            agora-app/dist/Agora-Setup.exe
+            agora-app/dist/Agora.exe
+
+      - name: Publish to desktop-latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-latest
+          name: Agora Desktop (latest build)
+          prerelease: true
+          files: |
+            agora-app/dist/Agora-Setup.exe
+            agora-app/dist/Agora.exe
+          body: |
+            Latest build of the Agora desktop app for Windows.
+
+            - **Agora-Setup.exe** — installs Agora with Start menu and desktop shortcuts. Recommended.
+            - **Agora.exe** — portable version, runs without installing (starts a little slower).
+
+            Windows may show "Windows protected your PC" because the app isn't code-signed.
+            Click **More info → Run anyway**. Your existing logins carry over from the npm version.
